@@ -3,114 +3,25 @@ from re import fullmatch
 from serial import Serial
 from serial import SerialException
 import serial.tools.list_ports
-import threading
+from threading import Thread
 from dataclasses import dataclass
-from queue import Queue
-from typing import Literal
+from typing import  Tuple
 from select import select
 from collections import deque
 from gc import collect
 import sys
 
-from Mission import ExecuteMission
-from DataCopy import DataCopy
+from Mission import MissionExecute
+from DataCopy import DataCopy, SmfData
 
 
-
-
-USE_LINUX: bool = False
+USE_WINDOWS: bool = True
 SELF_DEVICE_ID: int = 0x06
 SERIAL_PORT: str | None = None
 
 
-# Command Data class
-@dataclass(frozen=True)
-class Command:
-    frame_id: int
-    content: bytes
 
-######################
-# ----- Manegrer ----#
-
-class ProcessManeger():
-    # My status
-    #OFF = b'\x00'
-    #BOOTING = b'\x01'  commentout numbers used by BOSS PIC only
-    _IDLE =         b'\x02'
-    _BUSY=          b'\x03'
-    _SMF_COPY_REQ = b'\x04'
-    _COPYING =      b'\x05'
-    FINISHED =      b'\x06'
-
-    # Definision of "is SMF available" parameter
-    _SMF_COPY_ALLOW = 0x00
-    _SMF_COPY_DENY = 0x01
-
-    smf_copy_queue = deque()
-
-    def __init__(self):
-        self._status = self.__class__._IDLE
-
-    def process_command(self, command: Command) -> Literal["Shutdown"] | None:
-        match command.frame_id:
-            case FrameId.UPLINK_COMMAND:
-                print("\t-> UPLINK_COMMAND")
-                self._respond_ack()
-                if self._status == self.__class__._IDLE:
-                    execute_mission_thread = threading.Thread(target=self._execute_mission, args=(command.content, ), daemon=True)
-                    execute_mission_thread.start()
-
-            case FrameId.STATUS_CHECK:
-                print("\t-> STATUS_CHECK")
-                self._respond_status_check()
-            
-            case FrameId.IS_SMF_AVAILABLER:
-                print("\t-> IS_SMF_AVAILABLER")
-                self._respond_ack()
-                if command.content[0] == self.__class__._SMF_COPY_ALLOW:
-                    print(f"\t\t-> allowed")
-                    copy_to_smf_thread = threading.Thread(target=self._copy_to_smf, daemon=True)
-                    copy_to_smf_thread.start()
-                elif command.content[0] == self.__class__._SMF_COPY_DENY:
-                    print(f"\t\t-> denyed")
-
-        return self._status
-
-    def _execute_mission(self, content: bytes) -> None:
-        print(f"\nStart Mission thread")
-        self._status = self.__class__._BUSY
-        command_id = content[0]
-        parameter = content[1:]
-        exec_mission = ExecuteMission(command_id, parameter, self.__class__.smf_copy_queue)
-        exec_mission.execute_mission()
-        self._status = self.__class__._SMF_COPY_REQ if len(self.__class__.smf_copy_queue) > 0 else self.__class__.FINISHED
-        del exec_mission
-        print(f"\nFinished Mission thread")
-      
-    def _respond_status_check(self) -> None:
-        DataHandle.transmit_command(FrameId.MIS_MCU_STATUS, self._status)
-
-
-    def _copy_to_smf(self) -> None:
-        print(f"\nStart Data copy thread")
-        self._status = self.__class__._BUSY
-        data_copy = DataCopy(self.__class__.smf_copy_queue)
-        data_copy.copy_data()     
-        self._status = self.FINISHED
-        del data_copy
-        print(f"\nFinished Data copy thread")
-
-
-    def _respond_ack(self) -> None:
-        DataHandle.transmit_command(FrameId.ACK)
-
-# -----          ----#
-######################
-
-
-#########################
-# ----- Data Handle ----#
-#                          [[[ Data format ]]]
+#                          [[[ Data format ]]] (memo)
 #
 #| Signal ------------------------------------------------------- |
 #|         | Data ------------------------------------- |         |
@@ -121,20 +32,24 @@ class ProcessManeger():
 #|                                      /         \
 #|                                    CMD ID | Parameter
 
-
+@dataclass(frozen=True)
+class Command:
+    frame_id: int
+    content: bytes
 
 class FrameId:
+
     #receive
     UPLINK_COMMAND = 0x0
-    UPLINK_COMMAND_CONTENT_LENGTH = 9
+    _UPLINK_COMMAND_CONTENT_LENGTH = 9
     STATUS_CHECK = 0x1
-    STATUS_CHECK_CONTENT_LENGTH = 0
+    _STATUS_CHECK_CONTENT_LENGTH = 0
     IS_SMF_AVAILABLER = 0x2
-    IS_SMF_AVAILABLER_CONTENT_LENGTH = 1
+    _IS_SMF_AVAILABLER_CONTENT_LENGTH = 1
 
-    frame_ids_content_length = {UPLINK_COMMAND:     UPLINK_COMMAND_CONTENT_LENGTH, 
-                                STATUS_CHECK:       STATUS_CHECK_CONTENT_LENGTH, 
-                                IS_SMF_AVAILABLER:  IS_SMF_AVAILABLER_CONTENT_LENGTH, 
+    frame_ids_content_length = {UPLINK_COMMAND:     _UPLINK_COMMAND_CONTENT_LENGTH, 
+                                STATUS_CHECK:       _STATUS_CHECK_CONTENT_LENGTH, 
+                                IS_SMF_AVAILABLER:  _IS_SMF_AVAILABLER_CONTENT_LENGTH, 
                                 }
 
     #transmit
@@ -142,55 +57,93 @@ class FrameId:
     ACK = 0xF
 
 
-    @staticmethod
-    def get_frame_id(payload_or_frame: bytes) -> int:
-        return (payload_or_frame[0] & 0x0F)
-
     @classmethod
     def check_frame_id(cls, frame_id: int) -> bool:
         if (frame_id in cls.frame_ids_content_length) == True:
             return True
         else:
             print(f"\t-> Invalid frame ID received")
-            print(f"\t\t->received: 0x{frame_id:X}")
-            return False    
+            print(f"\t\t->received: {frame_id:#1X}")
+            return False 
 
 
 class DeviceId:
-    BOSS_PIC_DEVICE_ID = 0x4
+    BOSS_PIC_DEVICE_ID: int = 0x4
+    _DEVICE_ID: int = SELF_DEVICE_ID
 
-    @staticmethod
-    def get_device_id(payload_or_frame: bytes) -> int:
-        return (payload_or_frame[0] & 0xF0) >> 4
 
     @classmethod
     def check_devicve_id(cls, device_id: int) -> bool:
-        if device_id == SELF_DEVICE_ID:
+        if device_id == cls._DEVICE_ID:
             return True
         else:
             print(f"\t-> Invalid device ID received")
-            print(f"\t\t-> received: 0x{device_id:X}")
-            print(f"\t\t   My device ID: 0x{SELF_DEVICE_ID:X}")
+            print(f"\t\t-> received: {device_id:#1X}")
+            print(f"\t\t   My device ID: {cls._DEVICE_ID:#1X}")
             return False
+       
 
+class DataHandler:
+    _SFD = 0xAA
 
-class DataHandle:
-    SFD = 0xAA
+    @classmethod
+    def make_receive_command(cls, receive_signal: bytes) -> Command | None:
+        frame_and_frame_id = cls._get_frame_and_frame_id(receive_signal)
+        if not frame_and_frame_id:
+            return None
+        
+        frame, frame_id = frame_and_frame_id
+        if not cls._check_crc(frame):
+            return None
+        
+        device_id = (frame[0] & 0xF0) >> 4
+        if not DeviceId.check_devicve_id(device_id):
+            return None
+        
+        content = frame[1:-1] # trim Device ID, Frame ID and CRC
+        return Command(frame_id, content)
+    
+    @classmethod
+    def make_transmit_command(cls, frame_id: int, content: bytes = b'') -> bytes:
+        command: bytes = ((DeviceId.BOSS_PIC_DEVICE_ID << 4) | frame_id).to_bytes(1, 'big') + content
+        crc: int = cls._calc_crc(command)
+        data: bytes = cls._SFD.to_bytes(1, 'big') + command + crc.to_bytes(1, 'big')
+        return data
 
-    transmit_queue = deque()
+    @classmethod
+    def _get_frame_and_frame_id(cls, signal: bytes) -> Tuple[bytes, int] | None:
+        index = signal.find(cls._SFD)
+        if index == -1:
+            print(f"don't find SFD")
+            return None
+        
+        data = signal[index+1:]
+        if data == b'':
+            print(f"signal ends with SFD")
+            return None
+        
+        frame_id = data[0] & 0x0F
+        content_length = FrameId.frame_ids_content_length.get(frame_id)
+        if content_length == None:
+            print("\tInvalid frame ID received")
+            print(f"\t\t-> received frame ID: {frame_id:#02X}")
+            return None
+        
+        frame = data[:content_length+2] # trim after CRC        
+        return frame, frame_id
 
     @staticmethod
-    def calc_crc(payload: bytes) -> int:
+    def _calc_crc(payload: bytes) -> int:
         crc = payload[0]
         for dt in payload[1:]:
             crc ^= dt
         return crc
     
     @classmethod
-    def check_crc(cls, frame: bytes) -> bool:
-        received_crc = frame[-1]
-        payload = DataHandle.get_payload(frame)
-        collect_crc = cls.calc_crc(payload)
+    def _check_crc(cls, frame: bytes) -> bool:
+        received_crc: int       = frame[-1]
+        receive_payload: bytes  = frame[:-1]
+        collect_crc             = cls._calc_crc(receive_payload)
         if received_crc == collect_crc:
             return True
         else:
@@ -198,77 +151,21 @@ class DataHandle:
             print(f"\t\t-> received crc: {received_crc:02X}")
             print(f"\t\t   collect crc : {collect_crc:02X}")
             return False
+         
 
-    @staticmethod
-    def get_content_length(frame_id: int) -> int:
-        return FrameId.frame_ids_content_length.get(frame_id)
-    
-    @classmethod
-    def make_frame(cls, signal: bytes) -> bytes | None:
-        index = signal.find(cls.SFD)
-        if index == -1:
-            print(f"don't find SFD")
-            return None
-        data = signal[index+1:]
-        if data == b'':
-            print(f"signal ends with SFD")
-            return None
-        frame_id = FrameId.get_frame_id(data)
-        if FrameId.check_frame_id(frame_id) == False:
-            return None
-        content_length = cls.get_content_length(frame_id)
-        frame = data[:content_length+2] # slice to CRC
-        return frame
-
-    def get_payload(frame: bytes) -> bytes: 
-        return frame[:-1] # trim CRC
-
-    @staticmethod
-    def get_content(frame: bytes) -> bytes:
-        return frame[1:-1] # trim Device ID and Frame ID
-    
-    @classmethod
-    def transmit_command(cls, frame_id: int, content: bytes = b'') -> None:
-        command: bytes = ((DeviceId.BOSS_PIC_DEVICE_ID << 4) | frame_id).to_bytes(1, 'big') + content
-        crc = cls.calc_crc(command)
-        data = cls.SFD.to_bytes(1, 'big') + command + crc.to_bytes(1, 'big')
-        cls.transmit_queue.append(data)
-        
-    @classmethod
-    def make_command(cls, receive_signal: bytes) -> Command | None:
-        frame = cls.make_frame(receive_signal)
-        if frame is None:
-            return None
-        if cls.check_crc(frame) == False:
-            return None
-        if DeviceId.check_devicve_id(DeviceId.get_device_id(frame)) == False:
-            return None
-        frame_id = FrameId.get_frame_id(frame)
-        if FrameId.check_frame_id(frame_id) == False:
-            return None
-        command = Command(frame_id, cls.get_content(frame))
-
-        return command
-
-# -----             ----#
-#########################
-
-
-###########################
-# ----- Communication ----#
-
-class Communication():
+class SerialCommunication():
     # Affects CPU utilization (Windows only)
-    _READ_SLEEP_SEC = 0.1
+    _READ_SLEEP_SEC = 0.5
 
-    def __init__(self):
-        self._ser: serial = None
+    def __init__(self, receive_queue: deque):
+        self._ser: Serial
+        self._receive_queue: deque = receive_queue
         self.is_finish: bool = False
         
     def connect_port(self) -> None:
         self._ser = Serial(SERIAL_PORT, baudrate=9600, bytesize=8, stopbits=1, parity="N")
 
-    # for development
+    # for development function
     def select_port(self) -> None:
         print('Select using port')
         while True:
@@ -289,85 +186,148 @@ class Communication():
                     except SerialException as e:
                         print(e)
 
-    def read(self, read_queue: Queue) -> None:
+    def read(self) -> None:
         while self.is_finish == False:
             r, _, _ = select([self._ser], [], [], None)
             if r:
-                read_queue.put(self._ser.read(self._ser.in_waiting))
+                self._receive_queue.append(self._ser.read(self._ser.in_waiting))
 
-    def read_debug(self, read_queue: Queue) -> None: # for windows
+    # for development function
+    def read_windows(self) -> None:
         while self.is_finish == False:
             if self._ser.in_waiting > 0:
-                read_queue.put(self._ser.read(self._ser.in_waiting))
+                self._receive_queue.append(self._ser.read(self._ser.in_waiting))
             sleep(self.__class__._READ_SLEEP_SEC)
-                
+
     def transmit(self, data: bytes) -> None:
         self._ser.write(data)
 
     def close(self) -> None:
         if self._ser:
             self._ser.close()
+    
+
+class CommandProcesser:
+    
+    _WHILE_SLEEP_SEC = 0.2
+
+    # My status
+    #OFF = b'\x00'
+    #BOOTING = b'\x01'  commentout numbers used by BOSS PIC only
+    _IDLE =         b'\x02'
+    _BUSY=          b'\x03'
+    _SMF_COPY_REQ = b'\x04'
+    _COPYING =      b'\x05'
+    FINISHED =      b'\x06'
+
+    # Definision of "is SMF available" parameter
+    _SMF_COPY_ALLOW = 0x00
+    _SMF_COPY_DENY = 0x01
+
+    def __init__(self):
+        self._is_finished: bool = False
+        self._receive_queue: deque = deque()
+        self._transmit_data: bytes = b''
+        self._com = SerialCommunication(self._receive_queue)
+        self._smf_data: SmfData = SmfData()
+        self._status: bytes = self.__class__._IDLE
+
+    def run(self):
+        if SERIAL_PORT: # for development
+            self._com.connect_port()
+        else:
+            self._com.select_port()
+        if USE_WINDOWS: # for development
+            read_thread = Thread(target=self._com.read_windows, daemon=True)
+        else:
+            read_thread = Thread(target=self._com.read, daemon=True)
+        read_thread.start()
+
+        while not self._is_finished:
+            if len(self._receive_queue) > 0:
+                receive_signal: bytes = self._receive_queue.popleft()
+                command: Command | None = DataHandler.make_receive_command(receive_signal)
+
+                if command:
+                    self._process_command(command)
+
+                    if len(self._transmit_data) > 0:
+                        self._com.transmit(self._transmit_data)
+                        self._transmit_data = b''
+
+            sleep(self.__class__._WHILE_SLEEP_SEC)
         
-# -----               ----#
-###########################
+        self._com.is_finish = True
+        read_thread.join()
+        self._com.close()
 
+    def _process_command(self, command: Command) -> None:
+        match command.frame_id:
+            case FrameId.UPLINK_COMMAND:
+                print("\t-> UPLINK_COMMAND")
+                self._transmit_data = DataHandler.make_transmit_command(FrameId.ACK)
+                if self._status == self.__class__._IDLE:
+                    execute_mission_thread = Thread(target=self._execute_mission, args=(command.content, ), daemon=True)
+                    execute_mission_thread.start()
 
-def main():
-    print("==================")
-    print("= Software start =")
-    print("==================")
-    WHILE_TRUE_SLEEP_SEC = 1.0
-
-    com = Communication()
-    if SERIAL_PORT:
-        com.connect_port()
-    else:
-        com.select_port() # for development
-
-    read_queue = Queue()
-    if USE_LINUX:
-        read_thread = threading.Thread(target=com.read, args=(read_queue, ), daemon=True)
-    else:
-        read_thread = threading.Thread(target=com.read_debug, args=(read_queue, ), daemon=True)
-    read_thread.start()
-
-    maneger = ProcessManeger()
-    
-    transmit_queue = DataHandle.transmit_queue
-
-    break_flag = False
-
-    while True:
-        if not read_queue.empty():
-            receive_data: bytes = read_queue.get()
-            print(f"\n===\nData received < <= <== <=== [{int.from_bytes(receive_data):X}]")
-            command = DataHandle.make_command(receive_data)
-            read_queue.task_done()
-
-            if command:
-                if maneger.process_command(command) == ProcessManeger.FINISHED:
-                    break_flag = True
-
-        if len(transmit_queue) > 0:
-            transmit_data = transmit_queue.popleft()
-            print(f"Data transmit ===> ==> => > [{int.from_bytes(transmit_data):X}]")
-            com.transmit(transmit_data)
+            case FrameId.STATUS_CHECK:
+                print("\t-> STATUS_CHECK")
+                print(f"\t\t-> My status: {int.from_bytes(self._status):02X}")
+                self._transmit_data = DataHandler.make_transmit_command(FrameId.MIS_MCU_STATUS, self._status)
+                if self._status == self.FINISHED:
+                    self._is_finished = True
             
-        if break_flag == True:
-            break
+            case FrameId.IS_SMF_AVAILABLER:
+                print("\t-> IS_SMF_AVAILABLER")
+                self._transmit_data = DataHandler.make_transmit_command(FrameId.ACK)
+                if command.content[0] == self.__class__._SMF_COPY_ALLOW:
+                    print(f"\t\t-> allowed")
+                    copy_to_smf_thread = Thread(target=self._copy_to_smf, daemon=True)
+                    copy_to_smf_thread.start()
 
-        sleep(WHILE_TRUE_SLEEP_SEC)
+                elif command.content[0] == self.__class__._SMF_COPY_DENY:
+                    print(f"\t\t-> denyed")
 
+    def _execute_mission(self, content: bytes) -> None:
+        print(f"\nStart Mission thread")
+        command_id = content[0]
+        parameter = content[1:]
 
+        self._status = self.__class__._BUSY
 
-    print("software will be quit")
-    com.is_finish = True
-    read_thread.join()
-    com.close()
-    
+        exec_mission = MissionExecute(command_id, parameter, self._smf_data)
+        try:
+            exec_mission.execute_mission()
+        except:
+            print("Error in mission thread")
+
+        if self._smf_data.is_empty():
+            self._status = self.__class__.FINISHED
+        else:
+            self._status = self.__class__._SMF_COPY_REQ
+
+        del exec_mission
+        print(f"\nFinished Mission thread")
+      
+    def _copy_to_smf(self) -> None:
+        print(f"\nStart data copy thread")
+
+        self._status = self.__class__._BUSY
+
+        data_copy = DataCopy(self._smf_data)
+        try:
+            data_copy.copy_data()
+        except:
+            print("Error in data copy thread")   
+
+        self._status = self.FINISHED
+
+        del data_copy
+        print(f"\nFinished data copy thread")
 
 
 if __name__ == '__main__':
-    main()
+    processer = CommandProcesser()
+    processer.run()
     collect()
     sys.exit(0)
