@@ -3,7 +3,7 @@
    <h1>MIS MCU source</h1>
     
 🌏
-[**English**](https://www.google.com/webhp?hl=ja&sa=X&ved=0ahUKEwiv89aXx5CMAxX6UfUHHdRXAQUQPAgI) | 日本語  
+English | [**日本語**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_source/blob/main/README.ja.md)
 
 </div>
 
