@@ -1,4 +1,12 @@
-# MIS_MCU_source
+<div align="center">
+    ![X_logo_HP用](https://github.com/user-attachments/assets/099b80dd-a6a5-4a14-940f-06401dadf024)
+   <h1>MIS MCU source</h1>
+🌏
+[**English**](https://www.google.com/webhp?hl=ja&sa=X&ved=0ahUKEwiv89aXx5CMAxX6UfUHHdRXAQUQPAgI) |
+日本語
+
+</div>
+
 ## 概要
 本リポジトリは、GARDENsのMIS MCUに実装するソースコードの根幹となる部分を実装したものである。
 これを以下に従って各ミッションに派生させることで、開発効率の上昇、担当領域の明確化を実現し、
