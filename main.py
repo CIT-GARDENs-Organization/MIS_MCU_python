@@ -15,8 +15,8 @@ from Mission import Mission
 from DataCopy import DataCopy, SmfData
 
 
-USE_WINDOWS: bool = False
-SELF_DEVICE_ID: int = 0x00
+USE_WINDOWS: bool       = False
+SELF_DEVICE_ID: int     = 0x00
 SERIAL_PORT: str | None = None
 
 
@@ -308,10 +308,8 @@ class CommandProcesser:
             if isinstance(keep_booting_sec, int):
                 self._is_continue = True
                 self._keep_booting_sec = float(keep_booting_sec) + time()
-                print(f"sec -> {self._keep_booting_sec}")
-                print(f"time -> {time()}")
         except:
-            print("Error in mission thread")
+            print("!!!Error in mission thread")
 
         if self._smf_data.is_empty():
             if self._is_continue:
@@ -331,13 +329,11 @@ class CommandProcesser:
         try:
             data_copy.copy_data()
         except:
-            print("Error in data copy thread")   
+            print("!!!Error in data copy thread")   
 
         if self._is_continue:
-            print("here!!! my status: IDLE")
             self._status = self.__class__._IDLE
         else:
-            print("here!!! my status: FINISED")
             self._status = self.__class__._FINISHED
 
         del data_copy
