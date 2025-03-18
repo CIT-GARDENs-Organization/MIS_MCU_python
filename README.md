@@ -18,13 +18,21 @@ English | [**日本語**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_so
 ---
 
 ## 実装方法  
-1. `main.py` **19行目** → `SELF_DEVICE_ID` を自身のMIS MCUのDevice IDに設定  
-2. `main.py` **20行目** → `SERIAL_PORT` にシリアルポート名を文字列で記入  
+1. `main.py` **19行目** → `SELF_DEVICE_ID` を自身のMIS MCUのDevice IDに設定
+   | Devie ID  | 機器名　　 |
+   |:------    | :-------- |
+   |6          | APRS PIC  |
+   |7          | CAM MCU   |
+   |8          | CHO MCU   |
+   |9          | SATO PIC  |
+   |A          | NAKA PIC  |
+   |B          | BHU PIC   |
+3. `main.py` **20行目** → `SERIAL_PORT` にシリアルポート名を文字列で記入  
    - `None` の場合、自動取得＆CLI選択機能が利用可能  
-3. `DataCopy.py` → `DataType` クラスのクラス変数に **保存するデータの種類とアドレス** を列挙  
+4. `DataCopy.py` → `DataType` クラスのクラス変数に **保存するデータの種類とアドレス** を列挙  
    - **IICDのメモリマップ** に準拠すること  
-4. `Mission.py` → `MissionExecute` クラスの `_mission_list` に **コマンドIDと対応関数** を記述  
-5. `Mission.py` → `MissionExecute` クラス内に **該当する関数の動作** を実装  
+5. `Mission.py` → `MissionExecute` クラスの `_mission_list` に **コマンドIDと対応関数** を記述  
+6. `Mission.py` → `MissionExecute` クラス内に **該当する関数の動作** を実装  
 
 ---
 
@@ -39,6 +47,11 @@ English | [**日本語**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_so
   ```python
   ex) self._smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, ["./photo/thumb/0.png", "./photo/thumb/1.png"])
   ex) self._smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, path_list)
+
+### 機器継続機能
+- MIS MCUは基本的にミッション実行後、SMFにデータをコピーした後シャットダウンする仕様になっている。
+- もし何かしらの理由で「**ミッション実行後も一定時間起動し続けたい**」という機能があれば、ミッション関数の戻り値に**秒数**をint型で戻り値にいれること。
+- この機能を使わない場合、return文は書かないこと。
 
 ---
 
@@ -70,4 +83,4 @@ End copy to SMF
 |:-----------|:------------            |:------------                                |
 | 00         | XX __ __ __ __ __ __ __ | X秒待機する                                 |
 | 01         | _X __ __ __ __ __ __ __ | X枚のサムネ画像を保存する                   |
-| 02         | XX XX __ __ __ __ __ __ | Xミリ秒待機し本画像、サムネ画像を1枚保存する  |
+| 02         | XX XX __ __ __ __ __ __ | サムネ画像を1枚保存し、ミッション実行後X秒起動し続ける  |
