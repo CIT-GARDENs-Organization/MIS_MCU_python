@@ -35,10 +35,10 @@ from DataCopy import DataType, SmfData
 """
 
 
-class MissionExecute:
+class Mission:
     def __init__(self, command_id: int, parameter: bytes, smf_data: SmfData) -> None:
         self._command_id: int = command_id
-        self.parameter: bytes = parameter
+        self._parameter: bytes = parameter
         self.smf_data: SmfData = smf_data
 
         self._mission_list: dict[int, Callable] = {
@@ -51,17 +51,17 @@ class MissionExecute:
         mission = self._mission_list.get(self._command_id)
         if mission:
             print(f"Execute command ID: {self._command_id:#02X}")
-            return mission(self.parameter)
+            return mission()
         else:
-            print(f" Invalid command ID: {self._command_id:#02X}")
+            print(f"Invalid command ID: {self._command_id:#02X}")
 
 
     # sample code. It waits for the time of the 0th byte of the parameter.
-    def example_00(self, parameter: bytes):
+    def example_00(self):
         print("Start example mission", flush=True)
-        print(f"parameter: {int.from_bytes(parameter, 'big'):#016X}")
+        print(f"parameter: {int.from_bytes(self._parameter, 'big'):#016X}")
 
-        time = parameter[0]                 # XX __ __ __ __ __ __ __
+        time = self._parameter[0]                 # XX __ __ __ __ __ __ __
 
         print(f"count {time} sec")
 
@@ -73,11 +73,11 @@ class MissionExecute:
 
 
     # sample code. It takes a photo of the number in the lowest 4 bits of the 0th byte of the parameter.       
-    def example_01(self, parameter: bytes):
+    def example_01(self):
         print("Start CAM mission", flush=True)
-        print(f"parameter: {int.from_bytes(parameter, 'big'):#016X}")
+        print(f"parameter: {int.from_bytes(self._parameter, 'big'):#016X}")
 
-        number_of_shots = parameter[0] & 0X0F              # _X __ __ __ __ __ __ __
+        number_of_shots = self._parameter[0] & 0X0F              # _X __ __ __ __ __ __ __
         print(f"Take {number_of_shots} photos")
 
         #definisions
@@ -100,20 +100,20 @@ class MissionExecute:
         print("End CAM mission")
 
 
-    # sample code. It wait 0 to 1 byte * msec, then copy one full photo and one thumbnail photo to the SMF.  
-    def example_02(self, parameter: bytes):
+    # sample code. It shot photo and copy full size and thumbnail size, then MIS MCU keep booting at least X sec
+    def example_02(self):
         print("Start wait and shot", flush=True)
-        print(f"parameter: {int.from_bytes(parameter, 'big'):#016X}")
+
+        # booting time
+        keep_booting_sec = int.from_bytes(self._parameter[:2], 'big') # XX XX __ __ __ __ __ __
+        print(f"MIS MCU keep booting {keep_booting_sec}sec after this mission executed.")
+        print("Start wait and shot")
 
         #definisions
         photo_path_full  = "./photo/full/"
         photo_path_thumb = "./photo/thumb/"
         photo_list_full  = []
         photo_list_thumb = []
-
-        wait_ms = int.from_bytes(parameter[0:1], 'big') / 1000            # XX XX __ __ __ __ __ __
-        print(f"Wait {wait_ms} ")
-        sleep(wait_ms)
 
         # shot 
         print(f"shot photo:  0.png", flush=True)
@@ -133,4 +133,4 @@ class MissionExecute:
         print(f"\t\t-> photo: {photo_list_thumb}", flush=True)
         self.smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, photo_list_thumb)
 
-        print("Start wait and shot")
+        return keep_booting_sec
