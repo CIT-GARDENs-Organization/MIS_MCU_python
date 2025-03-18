@@ -2,8 +2,7 @@
     <img src="https://github.com/user-attachments/assets/099b80dd-a6a5-4a14-940f-06401dadf024" width="200" alt="GARDENs logo" />
    <h1>MIS MCU source</h1>
     
-🌏
-English | [**日本語**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_source/blob/main/README.ja.md)
+[**English**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_source/blob/main/README.md) | 🌍️ 日本語 
 
 </div>
 
