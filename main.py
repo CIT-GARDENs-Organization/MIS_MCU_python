@@ -15,8 +15,8 @@ from Mission import Mission
 from DataCopy import DataCopy, SmfData
 
 
-USE_WINDOWS: bool       = True
-SELF_DEVICE_ID: int     = 0x08
+USE_WINDOWS: bool       = False
+SELF_DEVICE_ID: int     = 0x00
 SERIAL_PORT: str | None = None
 
 
