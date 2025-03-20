@@ -15,8 +15,8 @@ from Mission import Mission
 from DataCopy import DataCopy, SmfData
 
 
-USE_WINDOWS: bool       = False
-SELF_DEVICE_ID: int     = 0x00
+USE_WINDOWS: bool       = True
+SELF_DEVICE_ID: int     = 0x08
 SERIAL_PORT: str | None = None
 
 
@@ -190,12 +190,14 @@ class SerialCommunication():
         while self.is_finish == False:
             r, _, _ = select([self._ser], [], [], None)
             if r:
+                sleep(0.2)
                 self._receive_queue.append(self._ser.read(self._ser.in_waiting))
 
     # for development function
     def read_windows(self) -> None:
         while self.is_finish == False:
             if self._ser.in_waiting > 0:
+                sleep(0.2)
                 self._receive_queue.append(self._ser.read(self._ser.in_waiting))
             sleep(self.__class__._READ_SLEEP_SEC)
 
