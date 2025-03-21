@@ -63,6 +63,7 @@ python
    - Once the rules are finalized, they will be communicated to each respective organization.
 2. Implementation of the SMF Copy Function
    - Currently, the SMF copy is simulated with the following print output, but in the future, the actual functionality will be developed, and a unified SMF copy function will be implemented.
+```
 Start data copy thread
 Start copy to SMF
         -> Data type: EXAMPLE_PHOTO_THUMB
