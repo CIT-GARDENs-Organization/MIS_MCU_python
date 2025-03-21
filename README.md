@@ -7,19 +7,19 @@ English | [**日本語**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_so
 
 </div>
 
-## 概要  
-本リポジトリは、GARDENsのMIS MCUに実装するソースコードの基盤を提供するものである。
-これを基に各ミッションへ派生させることによる以下の実現を目的とする。
+## Summary 
+This repository provides the foundation for the source code to be implemented in the MIS MCU of GARDENs.
+By branching out from this base to each mission, the following objectives are achieved.
 
-- **開発効率の向上**  
-- **担当領域の明確化**  
-- **統一された挙動による試験・運用の円滑化**  
+- **Improved development efficiency**  
+- **Clarification of responsibilities**  
+- **Streamlined testing and operations through unified behavior**  
 
 ---
 
-## 実装方法  
-1. `main.py` **19行目** → `SELF_DEVICE_ID` を自身のMIS MCUのDevice IDに設定
-   | Devie ID  | 機器名　　 |
+## Implementation Method  
+1. **Line 19** of main.py → Set SELF_DEVICE_ID to the Device ID of your MIS MCU.
+   | Devie ID  |Device Name|
    |:------    | :-------- |
    |6          | APRS PIC  |
    |7          | CAM MCU   |
@@ -27,42 +27,42 @@ English | [**日本語**](https://github.com/CIT-GARDENs-Organization/MIS_MCU_so
    |9          | SATO PIC  |
    |A          | NAKA PIC  |
    |B          | BHU PIC   |
-3. `main.py` **20行目** → `SERIAL_PORT` にシリアルポート名を文字列で記入  
-   - `None` の場合、自動取得＆CLI選択機能が利用可能  
-4. `DataCopy.py` → `DataType` クラスのクラス変数に **保存するデータの種類とアドレス** を列挙  
-   - **IICDのメモリマップ** に準拠すること  
-5. `Mission.py` → `MissionExecute` クラスの `_mission_list` に **コマンドIDと対応関数** を記述  
-6. `Mission.py` → `MissionExecute` クラス内に **該当する関数の動作** を実装  
+3. **Line 20** of main.py → Set SERIAL_PORT to the serial port name as a string.
+   - If set to None, automatic detection and CLI selection functionality will be available. 
+4. DataCopy.py → Enumerate **the types of data to be stored and their addresses** in the class variables of the DataType class.
+   - Must comply with the **IICD memory map**.
+5. Mission.py → In the MissionExecute class, define **command IDs and their corresponding functions** in _mission_list.  
+6. Mission.py → Implement **the behavior of the corresponding functions** within the MissionExecute class.  
 
 ---
 
-## 制約 & その他  
+## Constraints & Others  
 
-### **変更禁止のファイル・メソッド**  
-- `main.py`・`DataCopy.py` の処理（`print()` 関数は自由に配置、撤去して良い）  
-- `Mission.py` の `ExecuteMission` クラスの `execute_mission()` メソッド
+### **Files and Methods That Must Not Be Modified**  
+- The processing in main.py ・ DataCopy.py must not be modified (`print()` functions can be freely added or removed).
+- The execute_mission() method in the ExecuteMission class of Mission.py.
 
-### **SMFデータの保存ルール**  
-- `MissionExecute` クラスの `smf_data` に `append()` する  
-  ```python
+### **SMF Data Storage Rules**  
+- Append to smf_data in the MissionExecute class.
+  
+python
   ex) self._smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, ["./photo/thumb/0.png", "./photo/thumb/1.png"])
   ex) self._smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, path_list)
 
-### 機器継続機能
-- MIS MCUは基本的にミッション実行後、SMFにデータをコピーした後シャットダウンする仕様になっている。
-- もし何かしらの理由で「**ミッション実行後も一定時間起動し続けたい**」という機能があれば、ミッション関数の戻り値に**秒数**をint型で戻り値にいれること。
-- この機能を使わない場合、return文は書かないこと。
+### Device Continuation Function
+- The MIS MCU is designed to shut down after executing the mission and copying data to the SMF.
+- If there is a need to **keep the device running for a certain period after mission execution**, return the **duration in seconds** as an int from the mission function.
+- If this feature is not used, do not write a return statement.
 
 ---
 
-## 今後の更新予定 (作業担当者: GARDENs)
-1. printからsyslogへの移行
-   - 現在はprintを使って動作をモニタリングしているが、衛星の試験時、運用時はリアルタイムのモニタリングが不可能であるため、過去号機ではsyslogモジュールを用いてログを外部出力していた。
-   - 今回もそれを踏襲するが、具体的な出力フォーマットなどを定めていないため、決まり次第今後すべて統一された出力をするsyslogに移行する
-   - 決まり次第、ルールを各々の団体へ通知する。
-2. SMFへのコピー機能の実装
-   - 現在は以下のようなprint出力でSMFへのコピーを模しているが、今後実際に機能を開発し統一されたSMFへのコピー機能を搭載する。
-```
+## Upcoming Updates (Assigned to: GARDENs)
+1. Migration from print to syslog
+   - Currently, print is used to monitor operations, but during satellite testing and operations, real-time monitoring is not possible. Therefore, in previous models, the syslog module was used to output logs externally.
+   - This will follow the same approach as before, but since the specific output format has not yet been defined, we will transition to using syslog for unified output once the format is decided.
+   - Once the rules are finalized, they will be communicated to each respective organization.
+2. Implementation of the SMF Copy Function
+   - Currently, the SMF copy is simulated with the following print output, but in the future, the actual functionality will be developed, and a unified SMF copy function will be implemented.
 Start data copy thread
 Start copy to SMF
         -> Data type: EXAMPLE_PHOTO_THUMB
@@ -73,14 +73,14 @@ Start copy to SMF
 End copy to SMF
 ```
 
-## 追記
-動作理解を深めるため、3種のサンプルミッションと、BOSS PICのシミュレーターソフトを用意した。
-ぜひ試しに動作させてから各々のミッション開発に取り掛かってほしい
+## Additional Notes
+To deepen the understanding of the operation, three sample missions and the BOSS PIC simulator software have been provided.
+Feel free to try running them before starting the development of each mission.
 
 [BOSS PIC simulater](https://github.com/CIT-GARDENs-Organization/BOSS_PIC_simulator)
 
-| CMD ID     | 使用パラメーター         | 説明                                         |
-|:-----------|:------------            |:------------                                |
-| 00         | XX __ __ __ __ __ __ __ | X秒待機する                                 |
-| 01         | _X __ __ __ __ __ __ __ | X枚のサムネ画像を保存する                   |
-| 02         | XX XX __ __ __ __ __ __ | サムネ画像を1枚保存し、ミッション実行後X秒起動し続ける  |
+| CMD ID     | Used Parameters         | Explanation                                                                                |
+|:-----------|:------------            |:------------                                                                               |
+| 00         | XX __ __ __ __ __ __ __ | Wait for X seconds.                                                                        |
+| 01         | _X __ __ __ __ __ __ __ | Save X thumbnail images.                                                                   |
+| 02         | XX XX __ __ __ __ __ __ |Save one thumbnail image and keep the device running for X seconds after mission execution. |
