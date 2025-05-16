@@ -1,12 +1,14 @@
+from SmfQueue import DataType, SmfQueue
+from DataCopy import DataCopy # for development test
+
 from time import sleep
 from typing import Callable
 
-from DataCopy import DataType, SmfData
 
 
 """
 ======================
-@How to define function
+@How to define mission
 
 1) Write the command ID and the function name in the '_mission_list' instance variable of the 'ExecuteMission' class.
 2) Write the same function name written in '_mission_list' in the 'ExecuteMission' class.
@@ -21,7 +23,6 @@ from DataCopy import DataType, SmfData
     -> self.smf_data.append(DataType, List[path, ...])
        
       ex) self.smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, ["./photo/thumb/0.png", "./photo/thumb/1.png"])
-      ex) self.smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, ["./photo/thumb/0.png", "./photo/thumb/1.png"], DataType.EXAMPLE_PHOTO_FULL, ["./photo/full/0.png", "./photo/full/1.png"], )
 
       NG) self.smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, ["./photo/thumb/0.png"], DataType.EXAMPLE_PHOTO_THUMB, ["./photo/thumb/1.png"])
             -> append same data type to one argument
@@ -36,24 +37,25 @@ from DataCopy import DataType, SmfData
 
 
 class Mission:
-    def __init__(self, command_id: int, parameter: bytes, smf_data: SmfData) -> None:
+    def __init__(self, command_id: int, parameter: bytes) -> None:
         self._command_id: int = command_id
         self._parameter: bytes = parameter
-        self.smf_data: SmfData = smf_data
-
+        self.smf_data: SmfQueue = SmfQueue()
         self._mission_list: dict[int, Callable] = {
             0x00: self.example_00, 
             0x01: self.example_01,
-            0x02: self.example_02, 
         }
     
+
     def execute_mission(self) -> None:
         mission = self._mission_list.get(self._command_id)
         if mission:
             print(f"Execute command ID: {self._command_id:#02X}")
-            return mission()
+            print(f"parameter         : {int.from_bytes(self._parameter):#016X}")
+            mission()
         else:
             print(f"Invalid command ID: {self._command_id:#02X}")
+
 
 
     # sample code. It waits for the time of the 0th byte of the parameter.
@@ -69,7 +71,7 @@ class Mission:
             print(".", end="", flush=True)
             sleep(1)
         print()
-        print("End example mission end", flush=True)
+        print("End example mission", flush=True)
 
 
     # sample code. It takes a photo of the number in the lowest 4 bits of the 0th byte of the parameter.       
@@ -78,59 +80,48 @@ class Mission:
         print(f"parameter: {int.from_bytes(self._parameter, 'big'):#016X}")
 
         number_of_shots = self._parameter[0] & 0X0F              # _X __ __ __ __ __ __ __
-        print(f"Take {number_of_shots} photos")
+        print(f"Take {number_of_shots + 1} photos")
 
         #definisions
         photo_path_thumb = "./photo/thumb/"
         photo_list: list = []
 
         # shot
-        for i in range(number_of_shots):
-            print(f"shot photo:  {i}.png", flush=True)
-            photo_list.append(photo_path_thumb + str(i) + ".png")
+        for i in range(number_of_shots + 1):
+            print(f"shot photo:" + photo_path_thumb + "00_" + format(i, '02X') + "_00" + ".png", flush=True)
+            photo_list.append(photo_path_thumb + "00_" + format(i, '02X') + "_00" + ".png")
             sleep(1)
 
         # order to copy to SMF
         print("order to copy data")
-        print(f"\t-> data type: {DataType.EXAMPLE_PHOTO_THUMB.name}")
-        for i in range(number_of_shots):
+        print(f"\t-> data type: {DataType.EXAMPLE_SUN_PHOTO_FULL.name}")
+        for i in range(number_of_shots + 1):
             print(f"\t\t-> photo: {photo_list[i]}", flush=True)
-        self.smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, photo_list)
+        self.smf_data.append(DataType.EXAMPLE_SUN_PHOTO_FULL, photo_list)
 
         print("End CAM mission")
 
 
-    # sample code. It shot photo and copy full size and thumbnail size, then MIS MCU keep booting at least X sec
-    def example_02(self):
-        print("Start wait and shot", flush=True)
 
-        # booting time
-        keep_booting_sec = int.from_bytes(self._parameter[:2], 'big') # XX XX __ __ __ __ __ __
-        print(f"MIS MCU keep booting {keep_booting_sec}sec after this mission executed.")
-        print("Start wait and shot")
+if __name__ == "__main__":
+    command_id: int = 0x02
+    parameter: bytes = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+    is_do_copy_to_smf: bool = True
 
-        #definisions
-        photo_path_full  = "./photo/full/"
-        photo_path_thumb = "./photo/thumb/"
-        photo_list_full  = []
-        photo_list_thumb = []
 
-        # shot 
-        print(f"shot photo:  0.png", flush=True)
-        photo_list_full.append(photo_path_full + "0" + ".png")
-        # thumbnailing(0.png)         
-        photo_list_thumb.append(photo_path_thumb + "0" + ".png")
-        sleep(1)
+    print("\r\nThis is Mission.py run for development test.")
+    print("Please run main.py for actual operation.\r\n")
 
-        # order to copy to SMF
-        print("order to copy data")
+    print(f"command ID: {command_id:#02X}")
+    print(f"parameter: {int.from_bytes(parameter):#016X}\r\n")
 
-        print(f"\t-> data type: {DataType.EXAMPLE_PHOTO_FULL.name}")
-        print(f"\t\t-> photo: {photo_list_full}", flush=True)
-        self.smf_data.append(DataType.EXAMPLE_PHOTO_FULL, photo_list_full)
+    mission = Mission(command_id, parameter)
+    print("_______________________")
+    print("_____Start mission_____")
+    mission.execute_mission()
+    print("_____End mission_______")
+    print("_______________________\r\n")
 
-        print(f"\t-> data type: {DataType.EXAMPLE_PHOTO_THUMB.name}")
-        print(f"\t\t-> photo: {photo_list_thumb}", flush=True)
-        self.smf_data.append(DataType.EXAMPLE_PHOTO_THUMB, photo_list_thumb)
-
-        return keep_booting_sec
+    if is_do_copy_to_smf:
+        data_copy = DataCopy()
+        data_copy.copy_data()

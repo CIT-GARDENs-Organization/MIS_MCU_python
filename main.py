@@ -1,4 +1,8 @@
-from time import sleep, time
+from Mission import Mission
+from DataCopy import DataCopy
+from SmfQueue import SmfQueue
+
+from time import sleep
 from re import fullmatch
 from serial import Serial
 from serial import SerialException
@@ -8,15 +12,11 @@ from dataclasses import dataclass
 from typing import  Tuple
 from select import select
 from collections import deque
-from gc import collect
 import sys
-
-from Mission import Mission
-from DataCopy import DataCopy, SmfData
 
 
 USE_WINDOWS: bool       = False
-SELF_DEVICE_ID: int     = 0x00
+SELF_DEVICE_ID: int     = 0x06
 SERIAL_PORT: str | None = None
 
 
@@ -37,54 +37,31 @@ class Command:
     frame_id: int
     content: bytes
 
-class FrameId:
 
-    #receive
+class FrameId():
+    #Receives
     UPLINK_COMMAND = 0x0
     _UPLINK_COMMAND_CONTENT_LENGTH = 9
     STATUS_CHECK = 0x1
     _STATUS_CHECK_CONTENT_LENGTH = 0
-    IS_SMF_AVAILABLER = 0x2
-    _IS_SMF_AVAILABLER_CONTENT_LENGTH = 1
-
+    IS_SMF_AVAILABLE = 0x2
+    _IS_SMF_AVAILABLE_CONTENT_LENGTH = 1
     frame_ids_content_length = {UPLINK_COMMAND:     _UPLINK_COMMAND_CONTENT_LENGTH, 
                                 STATUS_CHECK:       _STATUS_CHECK_CONTENT_LENGTH, 
-                                IS_SMF_AVAILABLER:  _IS_SMF_AVAILABLER_CONTENT_LENGTH, 
+                                IS_SMF_AVAILABLE:  _IS_SMF_AVAILABLE_CONTENT_LENGTH, 
                                 }
 
-    #transmit
-    MIS_MCU_STATUS = 0x1
+    #Transmits
+    MIS_MCU_STATUS = 0x3
     ACK = 0xF
-
-
-    @classmethod
-    def check_frame_id(cls, frame_id: int) -> bool:
-        if (frame_id in cls.frame_ids_content_length) == True:
-            return True
-        else:
-            print(f"\t-> Invalid frame ID received")
-            print(f"\t\t->received: {frame_id:#1X}")
-            return False 
-
-
-class DeviceId:
-    BOSS_PIC_DEVICE_ID: int = 0x4
-    _DEVICE_ID: int = SELF_DEVICE_ID
-
-
-    @classmethod
-    def check_devicve_id(cls, device_id: int) -> bool:
-        if device_id == cls._DEVICE_ID:
-            return True
-        else:
-            print(f"\t-> Invalid device ID received")
-            print(f"\t\t-> received: {device_id:#1X}")
-            print(f"\t\t   My device ID: {cls._DEVICE_ID:#1X}")
-            return False
        
 
 class DataHandler:
+    """
+    The class role is Converting Signals and Commands
+    """
     _SFD = 0xAA
+    _BOSS_PIC_DEVICE_ID: int = 0x5
 
     @classmethod
     def make_receive_command(cls, receive_signal: bytes) -> Command | None:
@@ -97,15 +74,15 @@ class DataHandler:
             return None
         
         device_id = (frame[0] & 0xF0) >> 4
-        if not DeviceId.check_devicve_id(device_id):
+        if not cls._check_devicve_id(device_id):
             return None
         
         content = frame[1:-1] # trim Device ID, Frame ID and CRC
         return Command(frame_id, content)
     
     @classmethod
-    def make_transmit_command(cls, frame_id: int, content: bytes = b'') -> bytes:
-        command: bytes = ((DeviceId.BOSS_PIC_DEVICE_ID << 4) | frame_id).to_bytes(1, 'big') + content
+    def make_transmit_signal(cls, command: Command) -> bytes:
+        command: bytes = ((cls._BOSS_PIC_DEVICE_ID << 4) | command.frame_id).to_bytes(1, 'big') + command.content
         crc: int = cls._calc_crc(command)
         data: bytes = cls._SFD.to_bytes(1, 'big') + command + crc.to_bytes(1, 'big')
         return data
@@ -151,55 +128,70 @@ class DataHandler:
             print(f"\t\t-> received crc: {received_crc:02X}")
             print(f"\t\t   collect crc : {collect_crc:02X}")
             return False
-         
 
-class SerialCommunication():
+    @classmethod
+    def _check_devicve_id(cls, device_id: int) -> bool:
+        if device_id == SELF_DEVICE_ID:
+            return True
+        else:
+            print(f"\t-> Invalid device ID received")
+            print(f"\t\t-> received: {device_id:#1X}")
+            print(f"\t\t   My device ID: {SELF_DEVICE_ID:#1X}")
+            return False
+
+
+class SerialCommunication:
+    """
+    Receive and transmit signal via UART
+    """
     # Affects CPU utilization (Windows only)
     _READ_SLEEP_SEC = 0.5
 
-    def __init__(self, receive_queue: deque):
+    def __init__(self):
         self._ser: Serial
-        self._receive_queue: deque = receive_queue
-        self.is_finish: bool = False
+        self.receive_queue: deque[bytes] = deque()
+        self.is_finished: bool = False # this flag operated from MainProcesser class
         
     def connect_port(self) -> None:
-        self._ser = Serial(SERIAL_PORT, baudrate=9600, bytesize=8, stopbits=1, parity="N")
+        if SERIAL_PORT:
+            self._ser = Serial(SERIAL_PORT, baudrate=9600, bytesize=8, stopbits=1, parity="N")
 
-    # for development function
-    def select_port(self) -> None:
-        print('Select using port')
-        while True:
-            ports = list(serial.tools.list_ports.comports())
-            if not ports:
-                input('No port found. Press any key to retry.')
-                continue
-            for i, port in enumerate(ports):
-                print(f'{i:X}) {port.device}  ', end='\t')
-            print()
+        else: # for development
+            print('Select using port')
             while True:
-                choice_str = input('> ')
-                if fullmatch(f'^[0-{len(ports)-1}]{{1}}$', choice_str):
-                    choice = int(choice_str)
-                    try:
-                        self._ser = Serial(ports[choice].device, baudrate=9600, bytesize=8, stopbits=1, parity="N")
-                        return
-                    except SerialException as e:
-                        print(e)
+                ports = list(serial.tools.list_ports.comports())
+                if not ports:
+                    input('No port found. Press any key to retry.')
+                    continue
+                for i, port in enumerate(ports):
+                    print(f'{i:X}) {port.device}  ', end='\t')
+                print()
+                while True:
+                    choice_str = input('> ')
+                    if fullmatch(f'^[0-{len(ports)-1}]{{1}}$', choice_str):
+                        choice = int(choice_str)
+                        try:
+                            self._ser = Serial(ports[choice].device, baudrate=9600, bytesize=8, stopbits=1, parity="N")
+                            return
+                        except SerialException as e:
+                            print(e)
+
 
     def read(self) -> None:
-        while self.is_finish == False:
-            r, _, _ = select([self._ser], [], [], None)
-            if r:
-                sleep(0.2)
-                self._receive_queue.append(self._ser.read(self._ser.in_waiting))
+        if not USE_WINDOWS:
+            while self.is_finished == False:
+                r, _, _ = select([self._ser], [], [], None) # `select` is only available in Linux and mac environments
+                if r:
+                    sleep(0.2) # wait for receive all data
+                    self.receive_queue.append(self._ser.read(self._ser.in_waiting))
 
-    # for development function
-    def read_windows(self) -> None:
-        while self.is_finish == False:
-            if self._ser.in_waiting > 0:
-                sleep(0.2)
-                self._receive_queue.append(self._ser.read(self._ser.in_waiting))
-            sleep(self.__class__._READ_SLEEP_SEC)
+        else: # for Windows environment
+            while self.is_finished == False:
+                if self._ser.in_waiting > 0:
+                    sleep(0.2) # wait for receive all data
+                    self.receive_queue.append(self._ser.read(self._ser.in_waiting))
+                sleep(self.__class__._READ_SLEEP_SEC)
+
 
     def transmit(self, data: bytes) -> None:
         self._ser.write(data)
@@ -207,151 +199,165 @@ class SerialCommunication():
     def close(self) -> None:
         if self._ser:
             self._ser.close()
-    
 
-class CommandProcesser:
-    
-    _WHILE_SLEEP_SEC = 0.2
 
-    # My status
-    #OFF = b'\x00'
-    #BOOTING = b'\x01'  commentout numbers used by BOSS PIC only
-    _IDLE =         b'\x02'
-    _BUSY=          b'\x03'
+class MainProcesser:
+    _LOOP_SLEEP_SEC = 0.2
+
+#   _OFF          = b'\x00'
+#   _BOOTING      = b'\x01'  commentout numbers used by BOSS PIC only
+    _IDLE         = b'\x02'
+    _BUSY         = b'\x03'
     _SMF_COPY_REQ = b'\x04'
-    _COPYING =      b'\x05'
-    _FINISHED =      b'\x06'
+    _COPYING      = b'\x05'
+    _FINISHED     = b'\x06'
 
-    # Definision of "is SMF available" parameter
+    # Definision of `is SMF available` parameter
     _SMF_COPY_ALLOW = 0x00
     _SMF_COPY_DENY = 0x01
 
     def __init__(self):
         self._is_finished: bool = False
-        self._receive_queue: deque[bytes] = deque()
-        self._command_queue: deque[Command] = deque()
-        self._com = SerialCommunication(self._receive_queue)
-        self._smf_data: SmfData = SmfData()
+        self._com = SerialCommunication()
         self._status: bytes = self.__class__._IDLE
-        self._keep_booting_sec: float = 0
-        self._is_continue: bool = False
+
 
     def run(self):
-        if SERIAL_PORT: # for development
-            self._com.connect_port()
-        else:
-            self._com.select_port()
-        if USE_WINDOWS: # for development
-            read_thread = Thread(target=self._com.read_windows, daemon=True)
-        else:
-            read_thread = Thread(target=self._com.read, daemon=True)
+        self._com.connect_port()
+        read_thread = Thread(target=self._com.read, daemon=True)
         read_thread.start()
 
-        while not self._is_finished:
-            if len(self._receive_queue) > 0:
-                receive_signal: bytes = self._receive_queue.popleft()
-                command: Command | None = DataHandler.make_receive_command(receive_signal)
+        # Main loop
+        while True:
+            if len(self._com.receive_queue) > 0:
+                receive_signal: bytes = self._com.receive_queue.popleft()
+                command = DataHandler.make_receive_command(receive_signal)
 
                 if command:
-                    if command.frame_id == FrameId.STATUS_CHECK:
-                        print(f"\t-> Status check")
-                        print(f"\t\t-> My status: {int.from_bytes(self._status):#02X}")
-                        self._transmit_status()
-                        if self._status == self.__class__._FINISHED:
-                            break
+                    self._handle_command(command)
+                    if self._is_finished:
+                        break
 
-                    elif command.frame_id == FrameId.UPLINK_COMMAND:
-                        print(f"\t-> Uplink command")
-                        self._transmit_ack()
-                        if self._status == self.__class__._IDLE:
-                            self._status = self.__class__._BUSY
-                            execute_mission_thread = Thread(target=self._execute_mission, args=(command.content, ), daemon=True)
-                            execute_mission_thread.start()
-                            continue                     
-                        else:
-                            print(f"\t\t-> MIS MCU is busy. command append to queue")
-                            self._command_queue.append(command)
-                            continue
-
-                    else: # IS_SMF_AVAILABLE
-                        print(f"\t-> is SMF available")
-                        self._transmit_ack()
-                        if command.content[0] == self.__class__._SMF_COPY_ALLOW:
-                            print("\t\t-> allowd")
-                            self._status = self.__class__._COPYING
-                            execute_mission_thread = Thread(target=self._copy_to_smf, daemon=True)
-                            execute_mission_thread.start()   
-                            continue
-                        else: #DENY
-                            print("\t\t-> denyed")
-                            continue
-
-                if self._is_continue:
-                    if self._keep_booting_sec < time():
-                        self._is_continue = False
-                        self._status = self.__class__._FINISHED
-
-            sleep(self.__class__._WHILE_SLEEP_SEC)
+                else:
+                    continue
+                
+            sleep(self.__class__._LOOP_SLEEP_SEC)
         
-        self._com.is_finish = True
+        self._com.is_finished = True
         read_thread.join()
         self._com.close()
 
 
-    def _execute_mission(self, content: bytes) -> None:
-        print(f"\nStart Mission thread")
-        command_id: int = content[0]
-        parameter: bytes = content[1:]
+    def _handle_command(self, command: Command) -> None:
+        if command.frame_id == FrameId.UPLINK_COMMAND:
+            self._handle_uplink_command_frame(command.content)
+        elif command.frame_id == FrameId.STATUS_CHECK:
+            self._handle_status_check_frame(command.content)
+        elif command.frame_id == FrameId.IS_SMF_AVAILABLE:
+            self._handle_is_smf_available_frame(command.content)
+        else:
+            print(f"Frame : Invalid frame ID received")
+            print(f"\t-> received: {command.frame_id:#02X}")
 
-        mission = Mission(command_id, parameter, self._smf_data)
-        try:
-            keep_booting_sec: int | None = mission.execute_mission()
-            print(f"in main thread: wait sec: {keep_booting_sec}")
-            if isinstance(keep_booting_sec, int):
-                self._is_continue = True
-                self._keep_booting_sec = float(keep_booting_sec) + time()
-        except:
-            print("!!!Error in mission thread")
 
-        if self._smf_data.is_empty():
-            if self._is_continue:
-                self._smf_data = self.__class__._IDLE
-            else:
-                self._status = self.__class__._FINISHED
+    def _handle_uplink_command_frame(self, content: bytes) -> None:
+        print(f"Frame : Uplink command")
+
+        self._transmit_ack()
+        if self._status == self.__class__._BUSY:
+            print(f"\t-> MIS MCU is busy. cant execute this mission")
+
+        elif self._status == self.__class__._IDLE:
+            self._status = self.__class__._BUSY
+
+            command_id: int = content[0]
+            parameter: bytes = content[1:]
+
+            mission_thread = Thread(target=self._uplink_command_frame_thread, 
+                                    args=(command_id, parameter, ), 
+                                    daemon=True, 
+                                    name=f"Mission thread{command_id:#02X}")
+            
+            try:
+                mission_thread.start()
+            except Exception as e:
+                print(f"Error in mission thread: {e}")
+
+    def _uplink_command_frame_thread(self, command_id: int, parameter: bytes) -> None:
+        print("\r\n________________________________")
+        print("_____ Start mission thread _____\r\n")
+        mission = Mission(command_id, parameter)
+        mission.execute_mission() # do anything mission
+        if SmfQueue().is_empty():
+            self._status = self.__class__._FINISHED
         else:
             self._status = self.__class__._SMF_COPY_REQ
+        print("\r\n______ End mission thread ______")   
+        print("________________________________\r\n")
 
-        del mission
-        print(f"\nFinished Mission thread")
-      
-    def _copy_to_smf(self) -> None:
-        print(f"\nStart data copy thread")
 
-        data_copy = DataCopy(self._smf_data)
-        try:
-            data_copy.copy_data()
-        except:
-            print("!!!Error in data copy thread")   
 
-        if self._is_continue:
-            self._status = self.__class__._IDLE
-        else:
-            self._status = self.__class__._FINISHED
+    def _handle_status_check_frame(self, content: bytes) -> None:
+        print(f"Frame : STATUS_CHECK")
 
-        del data_copy
-        print(f"\nFinished data copy thread")
+        print(f"\t-> My status: {int.from_bytes(self._status):#02X}")
+        self._transmit_status()
+        if self._status == self.__class__._FINISHED:
+            print(f"\t\t-> Finished")
+            self._is_finished = True
+
+
+    def _handle_is_smf_available_frame(self, content: bytes) -> None:
+        print(f"Frame : IS SMF AVAILABLE")
+        self._transmit_ack()
+
+        # Allowed
+        if content[0] == self.__class__._SMF_COPY_ALLOW:
+            print("\t\t-> allowd")
+
+            self._status = self.__class__._COPYING
+            data_copy_thread = Thread(target=self._is_smf_available_frame_thread, 
+                                      daemon=True, 
+                                      name="Data copy thread")
+            data_copy_thread.start()
+  
+        # Denyed
+        elif content[0] == self.__class__._SMF_COPY_DENY:
+            print("\t\t-> denyed")
+            print("\t\t   retry next status check time")
+
+
+    def _is_smf_available_frame_thread(self) -> None:
+        data_copy = DataCopy()
+        data_copy.copy_data()
+        self._status = self.__class__._FINISHED
+
 
     def _transmit_ack(self):
-        command = DataHandler.make_transmit_command(FrameId.ACK)
-        self._com.transmit(command)
+        command = Command(FrameId.ACK, b'')
+        data = DataHandler.make_transmit_signal(command)
+        self._com.transmit(data)
     
+
     def _transmit_status(self):
-        command = DataHandler.make_transmit_command(FrameId.STATUS_CHECK, self._status)
-        self._com.transmit(command)
+        if self._status != self.__class__._FINISHED:
+            content = self._status + b'\x00\x00\x00'
+            command = Command(FrameId.MIS_MCU_STATUS, content)
+            data = DataHandler.make_transmit_signal(command)
+        else: # finished
+            flags = SmfQueue().get_data_type_flags()
+            if len(flags) > 3:
+                print(f"Data type flags is too long, data is copied to SMF but not to SCF")
+            padded_flags = (flags[:3] + [0x00] * (3 - len(flags)))
+            content = self._status + bytes(padded_flags)
+            command = Command(FrameId.MIS_MCU_STATUS, content)
+            data = DataHandler.make_transmit_signal(command)      
+
+        self._com.transmit(data)
+
 
 
 if __name__ == '__main__':
-    processer = CommandProcesser()
+    processer = MainProcesser()
     processer.run()
-    collect()
     sys.exit(0)
