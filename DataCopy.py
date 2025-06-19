@@ -44,26 +44,25 @@ class DataCopy:
                 PACKET_HEADER_SIZE = 3
                 PACKET_IMGDATA_SIZE = 64 - PACKET_HEADER_SIZE
                 wrote_size_erea_address = 4 * photo_index
-
                 print(f"Write data size area")
                 print(f"\t-> address: {size_erea_address + wrote_size_erea_address:#08x}")
                 #ここでは、写真のデータ量を書き込んでいく。
-                #つまりデータ量の10進数を16進数に直してそれを1バイトづつ切り分けてそれをリトルエンディアンの順番で書き込んでいく
+                #つまりデータ量の10進数を16進数に直してそれを1バイトづつ切り分けてそれをビッグエンディアンの順番で書き込んでいく
                 print(f"\t-> data:", end='')
-                img_header = img_sizeof_thisloop & 0xff
-                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 0 + wrote_size_erea_address, img_header)   #画像サイズの下8bitをFlashに書き込み
+                img_header = (img_sizeof_thisloop  >> 24 ) & 0xff
+                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 0 + wrote_size_erea_address, img_header)   #画像サイズの上32~24bitをFlashに書き込み
                 print(" {:#X}".format(img_header), end='')
 
-                img_header = (img_sizeof_thisloop  >> 8 )  & 0xff
-                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 1 + wrote_size_erea_address, img_header)   #画像サイズの下16~8bitをFlashに書き込み
-                print(" {:#X}".format(img_header),end='')
-
                 img_header = (img_sizeof_thisloop  >> 16 ) & 0xff
-                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 2 + wrote_size_erea_address, img_header)   #画像サイズの下24~16bitをFlashに書き込み
+                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 1 + wrote_size_erea_address, img_header)   #画像サイズの上24~16bitをFlashに書き込み
                 print(" {:#X}".format(img_header),end='')
 
-                img_header = (img_sizeof_thisloop  >> 24 ) & 0xff
-                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 3 + wrote_size_erea_address, img_header)   #画像サイズの下32~24bitをFlashに書き込み
+                img_header = (img_sizeof_thisloop  >> 8 )  & 0xff
+                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 2 + wrote_size_erea_address, img_header)   #画像サイズの上16~8bitをFlashに書き込み
+                print(" {:#X}".format(img_header),end='')
+
+                img_header = img_sizeof_thisloop & 0xff
+                self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 3 + wrote_size_erea_address, img_header)   #画像サイズの上8bitをFlashに書き込み
                 print(" {:#X}".format(img_header))
 
 
