@@ -7,20 +7,11 @@
 
 
 # -*- coding: utf-8 -*-
-import sys
-import struct
-import os
-import collections
-import random
-import binascii
 import RPi.GPIO as GPIO
 from time import sleep
-import datetime
 import spidev
 import time
-from array import array
 
-from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN
 
 
 
