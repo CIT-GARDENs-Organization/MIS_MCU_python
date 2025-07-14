@@ -8,7 +8,6 @@ from serial import Serial
 from serial import SerialException
 import serial.tools.list_ports
 from threading import Thread
-from dataclasses import dataclass
 from typing import Tuple, Optional
 from select import select
 from collections import deque
@@ -39,10 +38,11 @@ def debug_msg(msg):
 #|                                      /         \
 #|                                    CMD ID | Parameter
 
-@dataclass(frozen=True)
 class Command:
-    frame_id = None  # type: int
-    content = None  # type: bytes
+    def __init__(self, frame_id, content):
+        # type: (int, bytes) -> None
+        self.frame_id = frame_id  # type: int
+        self.content = content  # type: bytes
 
 
 class FrameId():
@@ -68,7 +68,7 @@ class DataHandler:
     The class role is Converting Signals and Commands
     """
     _SFD = 0xAA
-    _BOSS_PIC_DEVICE_ID: int = 0x5
+    _BOSS_PIC_DEVICE_ID = 0x5  # type: int
 
     @classmethod
     def make_receive_command(cls, receive_signal):
@@ -166,9 +166,9 @@ class SerialCommunication:
     _READ_SLEEP_SEC = 0.5
 
     def __init__(self):
-        self._ser: Serial
-        self.receive_queue: deque[bytes] = deque()
-        self.is_finished: bool = False # this flag operated from MainProcesser class
+        self._ser = None  # type: Optional[Serial]
+        self.receive_queue = deque()  # type: deque
+        self.is_finished = False  # type: bool
         
     def connect_port(self):
         # type: () -> None
@@ -255,7 +255,8 @@ class MainProcesser:
 
     def __init__(self):
         self._com = SerialCommunication()
-        self._status: bytes = self.__class__._IDLE
+        self._status = self.__class__._IDLE  # type: bytes
+        self._is_finished = False  # type: bool
 
 
     def run(self):
