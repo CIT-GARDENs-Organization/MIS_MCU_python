@@ -9,16 +9,22 @@ from serial import SerialException
 import serial.tools.list_ports
 from threading import Thread
 from dataclasses import dataclass
-from typing import  Tuple
+from typing import Tuple, Optional
 from select import select
 from collections import deque
 import sys
 import os
 from syslog import syslog
 
-USE_WINDOWS: bool       = False
-SELF_DEVICE_ID: int     = 0x06
-SERIAL_PORT: str | None = None
+USE_WINDOWS = False  # type: bool
+SELF_DEVICE_ID = 0x06  # type: int
+SERIAL_PORT = None  # type: Optional[str]
+
+def debug_msg(msg):
+    # type: (str) -> None
+    """Print message to console and syslog"""
+    print(msg)
+    syslog(msg)
 
 
 
@@ -35,8 +41,8 @@ SERIAL_PORT: str | None = None
 
 @dataclass(frozen=True)
 class Command:
-    frame_id: int
-    content: bytes
+    frame_id = None  # type: int
+    content = None  # type: bytes
 
 
 class FrameId():
@@ -65,7 +71,8 @@ class DataHandler:
     _BOSS_PIC_DEVICE_ID: int = 0x5
 
     @classmethod
-    def make_receive_command(cls, receive_signal: bytes) -> Command | None:
+    def make_receive_command(cls, receive_signal):
+        # type: (bytes) -> Optional[Command]
         frame_and_frame_id = cls._get_frame_and_frame_id(receive_signal)
         if not frame_and_frame_id:
             return None
@@ -82,67 +89,72 @@ class DataHandler:
         return Command(frame_id, content)
     
     @classmethod
-    def make_transmit_signal(cls, command: Command) -> bytes:
-        command: bytes = ((cls._BOSS_PIC_DEVICE_ID << 4) | command.frame_id).to_bytes(1, 'big') + command.content
-        crc: int = cls._calc_crc(command)
-        data: bytes = cls._SFD.to_bytes(1, 'big') + command + crc.to_bytes(1, 'big')
+    def make_transmit_signal(cls, command):
+        # type: (Command) -> bytes
+        command_bytes = ((cls._BOSS_PIC_DEVICE_ID << 4) | command.frame_id).to_bytes(1, 'big') + command.content  # type: bytes
+        crc = cls._calc_crc(command_bytes)  # type: int
+        data = cls._SFD.to_bytes(1, 'big') + command_bytes + crc.to_bytes(1, 'big')  # type: bytes
         return data
 
     @classmethod
-    def _get_frame_and_frame_id(cls, signal: bytes) -> Tuple[bytes, int] | None:
+    def _get_frame_and_frame_id(cls, signal):
+        # type: (bytes) -> Optional[Tuple[bytes, int]]
         index = signal.find(cls._SFD)
         if index == -1:
-            print(f"don't find SFD")
-            syslog(f"SFD not found in signal")
+            debug_msg("don't find SFD")
+            debug_msg("SFD not found in signal")
             return None
         
         data = signal[index+1:]
         if data == b'':
-            print(f"signal ends with SFD")
-            syslog(f"Signal ends with SFD")
+            debug_msg("signal ends with SFD")
+            debug_msg("Signal ends with SFD")
             return None
         
         frame_id = data[0] & 0x0F
         content_length = FrameId.frame_ids_content_length.get(frame_id)
         if content_length == None:
-            print("\tInvalid frame ID received")
-            print(f"\t\t-> received frame ID: {frame_id:#02X}")
-            syslog(f"Invalid frame ID received: {frame_id:#02X}")
+            debug_msg("\tInvalid frame ID received")
+            debug_msg("\t\t-> received frame ID: {0:#02X}".format(frame_id))
+            debug_msg("Invalid frame ID received: {0:#02X}".format(frame_id))
             return None
         
         frame = data[:content_length+2] # trim after CRC        
         return frame, frame_id
 
     @staticmethod
-    def _calc_crc(payload: bytes) -> int:
+    def _calc_crc(payload):
+        # type: (bytes) -> int
         crc = payload[0]
         for dt in payload[1:]:
             crc ^= dt
         return crc
     
     @classmethod
-    def _check_crc(cls, frame: bytes) -> bool:
-        received_crc: int       = frame[-1]
-        receive_payload: bytes  = frame[:-1]
-        collect_crc             = cls._calc_crc(receive_payload)
+    def _check_crc(cls, frame):
+        # type: (bytes) -> bool
+        received_crc = frame[-1]  # type: int
+        receive_payload = frame[:-1]  # type: bytes
+        collect_crc = cls._calc_crc(receive_payload)
         if received_crc == collect_crc:
             return True
         else:
-            print(f"\t-> CRC error !")
-            print(f"\t\t-> received crc: {received_crc:02X}")
-            print(f"\t\t   collect crc : {collect_crc:02X}")
-            syslog(f"CRC error - received: {received_crc:02X}, expected: {collect_crc:02X}")
+            debug_msg("\t-> CRC error !")
+            debug_msg("\t\t-> received crc: {0:02X}".format(received_crc))
+            debug_msg("\t\t   collect crc : {0:02X}".format(collect_crc))
+            debug_msg("CRC error - received: {0:02X}, expected: {1:02X}".format(received_crc, collect_crc))
             return False
 
     @classmethod
-    def _check_devicve_id(cls, device_id: int) -> bool:
+    def _check_devicve_id(cls, device_id):
+        # type: (int) -> bool
         if device_id == SELF_DEVICE_ID:
             return True
         else:
-            print(f"\t-> Invalid device ID received")
-            print(f"\t\t-> received: {device_id:#1X}")
-            print(f"\t\t   My device ID: {SELF_DEVICE_ID:#1X}")
-            syslog(f"Invalid device ID received: {device_id:#1X}, expected: {SELF_DEVICE_ID:#1X}")
+            debug_msg("\t-> Invalid device ID received")
+            debug_msg("\t\t-> received: {0:#1X}".format(device_id))
+            debug_msg("\t\t   My device ID: {0:#1X}".format(SELF_DEVICE_ID))
+            debug_msg("Invalid device ID received: {0:#1X}, expected: {1:#1X}".format(device_id, SELF_DEVICE_ID))
             return False
 
 
@@ -158,46 +170,41 @@ class SerialCommunication:
         self.receive_queue: deque[bytes] = deque()
         self.is_finished: bool = False # this flag operated from MainProcesser class
         
-    def connect_port(self) -> None:
+    def connect_port(self):
+        # type: () -> None
         if SERIAL_PORT:
-            print(f"Connecting to specified port: {SERIAL_PORT}")
-            syslog(f"Connecting to specified port: {SERIAL_PORT}")
+            debug_msg("Connecting to specified port: {0}".format(SERIAL_PORT))
             self._ser = Serial(SERIAL_PORT, baudrate=9600, bytesize=8, stopbits=1, parity="N")
-            print(f"Successfully connected to {SERIAL_PORT}")
-            syslog(f"Successfully connected to {SERIAL_PORT}")
+            debug_msg("Successfully connected to {0}".format(SERIAL_PORT))
 
         else: # for development
-            print('Select using port')
-            syslog('Select using port')
+            debug_msg('Select using port')
             while True:
                 ports = list(serial.tools.list_ports.comports())
                 if not ports:
-                    print('No port found. Press any key to retry.')
-                    syslog('No port found. Press any key to retry.')
+                    debug_msg('No port found. Press any key to retry.')
                     input('No port found. Press any key to retry.')
                     continue
                 for i, port in enumerate(ports):
-                    print(f'{i:X}) {port.device}  ', end='\t')
+                    print('{0:X}) {1}  '.format(i, port.device), end='\t')
                 print()
                 while True:
                     choice_str = input('> ')
-                    if fullmatch(f'^[0-{len(ports)-1}]{{1}}$', choice_str):
+                    if fullmatch('^[0-{0}]{{1}}$'.format(len(ports)-1), choice_str):
                         choice = int(choice_str)
                         try:
-                            print(f"Attempting to connect to {ports[choice].device}")
-                            syslog(f"Attempting to connect to {ports[choice].device}")
+                            debug_msg("Attempting to connect to {0}".format(ports[choice].device))
                             self._ser = Serial(ports[choice].device, baudrate=9600, bytesize=8, stopbits=1, parity="N")
-                            print(f"Successfully connected to {ports[choice].device}")
-                            syslog(f"Successfully connected to {ports[choice].device}")
+                            debug_msg("Successfully connected to {0}".format(ports[choice].device))
                             return
                         except SerialException as e:
-                            print(e)
-                            syslog(f"Serial connection error: {e}")
+                            print(str(e))
+                            debug_msg("Serial connection error: {0}".format(str(e)))
 
 
-    def read(self) -> None:
-        print("Serial read thread started")
-        syslog("Serial read thread started")
+    def read(self):
+        # type: () -> None
+        debug_msg("Serial read thread started")
         if not USE_WINDOWS:
             while True:
                 r, _, _ = select([self._ser], [], [], None) # `select` is only available in Linux and mac environments
@@ -205,8 +212,7 @@ class SerialCommunication:
                     sleep(0.2) # wait for receive all data
                     data = self._ser.read(self._ser.in_waiting)
                     if data:
-                        print(f"Serial data received: {len(data)} bytes")
-                        syslog(f"Serial data received: {len(data)} bytes")
+                        debug_msg("Serial data received: {0} bytes".format(len(data)))
                         self.receive_queue.append(data)
 
         else: # for Windows environment
@@ -215,21 +221,20 @@ class SerialCommunication:
                     sleep(0.2) # wait for receive all data
                     data = self._ser.read(self._ser.in_waiting)
                     if data:
-                        print(f"Serial data received: {len(data)} bytes")
-                        syslog(f"Serial data received: {len(data)} bytes")
+                        debug_msg("Serial data received: {0} bytes".format(len(data)))
                         self.receive_queue.append(data)
                 sleep(self.__class__._READ_SLEEP_SEC)
 
 
-    def transmit(self, data: bytes) -> None:
-        print(f"Transmitting data: {len(data)} bytes - {data.hex()}")
-        syslog(f"Transmitting data: {len(data)} bytes - {data.hex()}")
+    def transmit(self, data):
+        # type: (bytes) -> None
+        debug_msg("Transmitting data: {0} bytes - {1}".format(len(data), data.hex()))
         self._ser.write(data)
 
-    def close(self) -> None:
+    def close(self):
+        # type: () -> None
         if self._ser:
-            print("Closing serial port")
-            syslog("Closing serial port")
+            debug_msg("Closing serial port")
             self._ser.close()
 
 
@@ -254,22 +259,19 @@ class MainProcesser:
 
 
     def run(self):
-        print("Starting MainProcesser")
-        syslog("Starting MainProcesser")
+        # type: () -> None
+        debug_msg("Starting MainProcesser")
         self._com.connect_port()
         read_thread = Thread(target=self._com.read, daemon=True)
         read_thread.start()
-        print("Serial read thread started")
-        syslog("Serial read thread started")
+        debug_msg("Serial read thread started")
 
         # Main loop
-        print("Entering main loop")
-        syslog("Entering main loop")
+        debug_msg("Entering main loop")
         while True:
             if len(self._com.receive_queue) > 0:
-                receive_signal: bytes = self._com.receive_queue.popleft()
-                print(f"Received size: {len(receive_signal)},  signal: {receive_signal.hex()}")
-                syslog(f"Received size: {len(receive_signal)},  signal: {receive_signal.hex()}")
+                receive_signal = self._com.receive_queue.popleft()  # type: bytes
+                debug_msg("Received size: {0},  signal: {1}".format(len(receive_signal), receive_signal.hex()))
                 command = DataHandler.make_receive_command(receive_signal)
 
                 if command:
@@ -282,12 +284,12 @@ class MainProcesser:
                 
             sleep(self.__class__._LOOP_SLEEP_SEC)
 
-        print("Main processer finish")
-        syslog("Main processer finish")
+        debug_msg("Main processer finish")
         return
 
 
-    def _handle_command(self, command: Command) -> None:
+    def _handle_command(self, command):
+        # type: (Command) -> None
         if command.frame_id == FrameId.UPLINK_COMMAND:
             self._handle_uplink_command_frame(command.content)
         elif command.frame_id == FrameId.STATUS_CHECK:
@@ -295,130 +297,124 @@ class MainProcesser:
         elif command.frame_id == FrameId.IS_SMF_AVAILABLE:
             self._handle_is_smf_available_frame(command.content)
         else:
-            print(f"Frame : Invalid frame ID received")
-            print(f"\t-> received: {command.frame_id:#02X}")
-            syslog(f"Invalid frame ID received: {command.frame_id:#02X}")
+            debug_msg("Frame : Invalid frame ID received")
+            debug_msg("\t-> received: {0:#02X}".format(command.frame_id))
+            debug_msg("Invalid frame ID received: {0:#02X}".format(command.frame_id))
 
 
-    def _handle_uplink_command_frame(self, content: bytes) -> None:
-        print(f"Frame : Uplink command")
-        syslog(f"Frame : Uplink command")
+    def _handle_uplink_command_frame(self, content):
+        # type: (bytes) -> None
+        debug_msg("Frame : Uplink command")
 
         self._transmit_ack()
         if self._status == self.__class__._BUSY:
-            print(f"\t-> MIS MCU is busy. cant execute this mission")
-            syslog(f"MIS MCU is busy. cant execute this mission")
+            debug_msg("\t-> MIS MCU is busy. cant execute this mission")
+            debug_msg("MIS MCU is busy. cant execute this mission")
 
         elif self._status == self.__class__._IDLE:
             self._status = self.__class__._BUSY
-            print(f"\t-> Status changed to BUSY")
-            syslog(f"Status changed to BUSY")
+            debug_msg("\t-> Status changed to BUSY")
+            debug_msg("Status changed to BUSY")
 
-            command_id: int = content[0]
-            parameter: bytes = content[1:]
-            print(f"\t-> Command ID: {command_id:#02X}, Parameter: {parameter.hex()}")
-            syslog(f"Command ID: {command_id:#02X}, Parameter: {parameter.hex()}")
+            command_id = content[0]  # type: int
+            parameter = content[1:]  # type: bytes
+            debug_msg("\t-> Command ID: {0:#02X}, Parameter: {1}".format(command_id, parameter.hex()))
+            debug_msg("Command ID: {0:#02X}, Parameter: {1}".format(command_id, parameter.hex()))
 
             mission_thread = Thread(target=self._uplink_command_frame_thread, 
                                     args=(command_id, parameter, ), 
                                     daemon=True, 
-                                    name=f"Mission thread{command_id:#02X}")
+                                    name="Mission thread{0:#02X}".format(command_id))
             mission_thread.start()
-            print(f"\t-> Mission thread started")
-            syslog(f"Mission thread started")
+            debug_msg("\t-> Mission thread started")
+            debug_msg("Mission thread started")
 
-    def _uplink_command_frame_thread(self, command_id: int, parameter: bytes) -> None:
+    def _uplink_command_frame_thread(self, command_id, parameter):
+        # type: (int, bytes) -> None
         print("\r\n________________________________")
         print("_____ Start mission thread _____\r\n")
-        syslog("Start mission thread")
+        debug_msg("Start mission thread")
         mission = Mission(command_id, parameter)
         try:
             mission.execute_mission() # do anything mission
-            print("Mission executed successfully")
-            syslog("Mission executed successfully")
+            debug_msg("Mission executed successfully")
         except Exception as e:
-            print(f"Error in mission thread: {e}")
-            syslog(f"Error in mission thread: {e}")
+            debug_msg("Error in mission thread: {0}".format(str(e)))
         finally:
             if SmfQueue().is_empty():
                 self._status = self.__class__._FINISHED
-                print("No SMF data to copy, status set to FINISHED")
-                syslog("No SMF data to copy, status set to FINISHED")
+                debug_msg("No SMF data to copy, status set to FINISHED")
             else:
                 self._status = self.__class__._SMF_COPY_REQ
-                print("SMF data available, status set to SMF_COPY_REQ")
-                syslog("SMF data available, status set to SMF_COPY_REQ")
+                debug_msg("SMF data available, status set to SMF_COPY_REQ")
         print("\r\n______ End mission thread ______")   
         print("________________________________\r\n")
-        syslog("End mission thread")
+        debug_msg("End mission thread")
 
 
 
-    def _handle_status_check_frame(self, content: bytes) -> None:
-        print(f"Frame : STATUS_CHECK")
-        syslog(f"Frame : STATUS_CHECK")
+    def _handle_status_check_frame(self, content):
+        # type: (bytes) -> None
+        debug_msg("Frame : STATUS_CHECK")
 
-        print(f"\t-> My status: {int.from_bytes(self._status):#02X}")
-        syslog(f"Current status: {int.from_bytes(self._status):#02X}")
+        debug_msg("\t-> My status: {0:#02X}".format(int.from_bytes(self._status)))
+        debug_msg("Current status: {0:#02X}".format(int.from_bytes(self._status)))
         self._transmit_status()
         if self._status == self.__class__._FINISHED:
-            print(f"\t\t-> Finished")
-            syslog(f"Status is FINISHED, setting finish flag")
+            debug_msg("\t\t-> Finished")
+            debug_msg("Status is FINISHED, setting finish flag")
             self._is_finished = True
 
 
-    def _handle_is_smf_available_frame(self, content: bytes) -> None:
-        print(f"Frame : IS SMF AVAILABLE")
-        syslog(f"Frame : IS SMF AVAILABLE")
+    def _handle_is_smf_available_frame(self, content):
+        # type: (bytes) -> None
+        debug_msg("Frame : IS SMF AVAILABLE")
         self._transmit_ack()
 
         # Allowed
         if content[0] == self.__class__._SMF_COPY_ALLOW:
-            print("\t\t-> allowd")
-            syslog("SMF copy allowed, starting data copy thread")
+            debug_msg("\t\t-> allowd")
+            debug_msg("SMF copy allowed, starting data copy thread")
 
             self._status = self.__class__._COPYING
             data_copy_thread = Thread(target=self._is_smf_available_frame_thread, 
                                       daemon=True, 
                                       name="Data copy thread")
             data_copy_thread.start()
-            print("\t\t-> Data copy thread started")
-            syslog("Data copy thread started")
+            debug_msg("\t\t-> Data copy thread started")
+            debug_msg("Data copy thread started")
   
         # Denyed
         elif content[0] == self.__class__._SMF_COPY_DENY:
-            print("\t\t-> denyed")
-            print("\t\t   retry next status check time")
-            syslog("SMF copy denied, will retry next status check time")
+            debug_msg("\t\t-> denyed")
+            debug_msg("\t\t   retry next status check time")
+            debug_msg("SMF copy denied, will retry next status check time")
 
 
-    def _is_smf_available_frame_thread(self) -> None:
-        print("Starting data copy process")
-        syslog("Starting data copy process")
+    def _is_smf_available_frame_thread(self):
+        # type: () -> None
+        debug_msg("Starting data copy process")
         data_copy = DataCopy()
         try:
             data_copy.copy_data()
-            print("Data copy completed successfully")
-            syslog("Data copy completed successfully")
+            debug_msg("Data copy completed successfully")
         except Exception as e:
-            print(f"Error in data copy thread: {e}")
-            syslog(f"Error in data copy thread: {e}")
+            debug_msg("Error in data copy thread: {0}".format(str(e)))
         finally:
             self._status = self.__class__._FINISHED
-            print("Data copy thread finished, status set to FINISHED")
-            syslog("Data copy thread finished, status set to FINISHED")
+            debug_msg("Data copy thread finished, status set to FINISHED")
 
     def _transmit_ack(self):
-        print("Transmitting ACK")
-        syslog("Transmitting ACK")
+        # type: () -> None
+        debug_msg("Transmitting ACK")
         command = Command(FrameId.ACK, b'')
         data = DataHandler.make_transmit_signal(command)
         self._com.transmit(data)
     
 
     def _transmit_status(self):
-        print("Transmitting status")
-        syslog("Transmitting status")
+        # type: () -> None
+        debug_msg("Transmitting status")
         if self._status != self.__class__._FINISHED:
             content = self._status + b'\x00\x00\x00'
             command = Command(FrameId.MIS_MCU_STATUS, content)
@@ -426,24 +422,20 @@ class MainProcesser:
         else: # finished
             flags = SmfQueue().get_data_type_flags()
             if len(flags) > 3:
-                print(f"Data type flags is too long, data is copied to SMF but not to SCF")
-                syslog(f"Data type flags is too long, data is copied to SMF but not to SCF")
+                debug_msg("Data type flags is too long, data is copied to SMF but not to SCF")
             padded_flags = (flags[:3] + [0x00] * (3 - len(flags)))
             content = self._status + bytes(padded_flags)
             command = Command(FrameId.MIS_MCU_STATUS, content)
             data = DataHandler.make_transmit_signal(command)
-            print(f"Status transmitted with flags: {flags}")
-            syslog(f"Status transmitted with flags: {flags}")
+            debug_msg("Status transmitted with flags: {0}".format(flags))
 
         self._com.transmit(data)
 
 
 
 if __name__ == '__main__':
-    print("Program started")
-    syslog("Program started")
+    debug_msg("Program started")
     processer = MainProcesser()
     processer.run()
-    print("Program finished")
-    syslog("Program finished")
+    debug_msg("Program finished")
     os.system("sudo shutdown -h now")
