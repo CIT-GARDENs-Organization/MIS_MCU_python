@@ -142,7 +142,6 @@ class DataCopy:
                 pckt_num   = 0                                                                      #何番目の画像パケットなのか識別
                 total_pckt_num = -(- img_sizeof_thisloop // PACKET_IMGDATA_SIZE)                    #読み出した画像がいくつのpcktに分割できるか計算(切上げ)
 
-
                 #read_img_cntr番目の画像データをパケット化し、画像ヘッダと共に次々にSMFへ書き込んでいく
                 debug_msg("\t-> address: {0:#08X}".format(adrs2writedata))
                 debug_msg("address: {0:#08X}".format(adrs2writedata))
@@ -204,7 +203,7 @@ class DataCopy:
                             imgdata_bytes = image_file.read(PACKET_IMGDATA_SIZE)
 
                             # ヘッダーとデータを64バイトのパケットをまとめて書き込み
-                            packet_data = img_header + imgdata_bytes
+                            packet_data = img_pckt_header + imgdata_bytes
                             self.flash.WRITE_DATA_BYTES_SMF(adrs2writedata, packet_data)
 
                             # 次のパケットのアドレスを更新
