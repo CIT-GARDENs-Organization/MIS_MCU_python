@@ -198,23 +198,17 @@ class DataCopy:
                                 debug_msg("       Using default header: `FF FF FF`")
                                 img_pckt_header = [0xFF, 0xFF, 0xFF]
 
-                            # ストリーミング読み込み：必要な分だけ読み込む
+                            # ストリーミング読み込み
                             start_idx = pckt_num * PACKET_IMGDATA_SIZE
-                            image_file.seek(start_idx)  # ファイルポジションを移動
-                            imgdata_bytes = image_file.read(PACKET_IMGDATA_SIZE)  # 必要な分だけ読み込み
-                            
-                            # サイズエリア書き込み（3バイト）
-                            header_start = adrs2writedata
-                            for i in range(PACKET_HEADER_SIZE):
-                                self.flash.WRITE_DATA_BYTE_SMF(header_start + i, img_pckt_header[i])
-                        
-                            # データ書き込み（最大61バイト）
-                            data_start = header_start + PACKET_HEADER_SIZE
-                            for i, byte_val in enumerate(imgdata_bytes):
-                                self.flash.WRITE_DATA_BYTE_SMF(data_start + i, byte_val)
-                        
+                            image_file.seek(start_idx)
+                            imgdata_bytes = image_file.read(PACKET_IMGDATA_SIZE)
+
+                            # ヘッダーとデータを64バイトのパケットをまとめて書き込み
+                            packet_data = img_header + imgdata_bytes
+                            self.flash.WRITE_DATA_BYTES_SMF(adrs2writedata, packet_data)
+
                             # 次のパケットのアドレスを更新
-                            adrs2writedata = data_start + len(imgdata_bytes)
+                            adrs2writedata = data_start + len(packet_data)
                             #デバック用（64バイトずつ書き込まれているか確認できる）
                             #print(f"パケット{pckt_num}: ヘッダ=0x{header_start:08X}, データ=0x{data_start:08X}, サイズ={len(imgdata_bytes)}バイト")  # デバッグ用
 
