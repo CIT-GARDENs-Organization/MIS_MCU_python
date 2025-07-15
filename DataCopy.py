@@ -87,26 +87,23 @@ class DataCopy:
                 debug_msg("address: {0:#08X}".format(size_erea_address + wrote_size_erea_address))
                 #ここでは、写真のデータ量を書き込んでいく。
                 #つまりデータ量の10進数を16進数に直してそれを1バイトづつ切り分けてそれをビッグエンディアンの順番で書き込んでいく
-                print("\t-> data:", end='')
-                syslog("\t-> data:", end='')
+                debug_msg("\t-> data:")
                 img_header = (img_sizeof_thisloop  >> 24 ) & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 0 + wrote_size_erea_address, img_header)   #画像サイズの上32~24bitをFlashに書き込み
-                print(" {0:#X}".format(img_header), end='')
-                syslog(" {0:#X}".format(img_header), end='')
+                debug_msg(" {0:#X}".format(img_header))
 
                 img_header = (img_sizeof_thisloop  >> 16 ) & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 1 + wrote_size_erea_address, img_header)   #画像サイズの上24~16bitをFlashに書き込み
-                print(" {0:#X}".format(img_header),end='')
-                syslog(" {0:#X}".format(img_header),end='')
+                debug_msg(" {0:#X}".format(img_header))
 
                 img_header = (img_sizeof_thisloop  >> 8 )  & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 2 + wrote_size_erea_address, img_header)   #画像サイズの上16~8bitをFlashに書き込み
-                print(" {0:#X}".format(img_header),end='')
-                syslog(" {0:#X}".format(img_header),end='')
+                debug_msg(" {0:#X}".format(img_header))
+
 
                 img_header = img_sizeof_thisloop & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 3 + wrote_size_erea_address, img_header)   #画像サイズの上8bitをFlashに書き込み
-                print(" {0:#X}".format(img_header))
+                debug_msg(" {0:#X}".format(img_header))
 
 
 

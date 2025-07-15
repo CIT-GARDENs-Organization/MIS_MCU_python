@@ -358,8 +358,8 @@ class MainProcesser:
         # type: (bytes) -> None
         debug_msg("Frame : STATUS_CHECK")
 
-        debug_msg("\t-> My status: {0:#02X}".format(int.from_bytes(self._status)))
-        debug_msg("Current status: {0:#02X}".format(int.from_bytes(self._status)))
+        debug_msg("\t-> My status: {0:#02X}".format(int.from_bytes(self._status, "big")))
+        debug_msg("Current status: {0:#02X}".format(int.from_bytes(self._status, "big")))
         self._transmit_status()
         if self._status == self.__class__._FINISHED:
             debug_msg("\t\t-> Finished")
