@@ -1,7 +1,7 @@
 from ast import Tuple
 from collections import deque
 from enum import Enum
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 class DataType(Enum):
 #   DATA_TYPE_NAME            = (size_area ,  body_area, data_type_flag)
@@ -21,15 +21,17 @@ class SmfQueue:
     _instance = None
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = super(SmfQueue, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self) -> None:
+    def __init__(self):
+        # type: () -> None
         if not hasattr(self, "_smf_data"):
-            self._smf_data: deque[Tuple[DataType, List[str]]] = deque()
-            self._data_type_flags: List[int] = []
+            self._smf_data = deque()  # type: deque
+            self._data_type_flags = []  # type: List[int]
     
-    def append(self, data_type: DataType, path_list: List[str]) -> None:
+    def append(self, data_type, path_list):
+        # type: (DataType, List[str]) -> None
         if not isinstance(data_type, DataType):
             raise TypeError("[WARN] first argument must be 'DataType'")
         if not isinstance(path_list, list):
@@ -39,12 +41,15 @@ class SmfQueue:
         self._smf_data.append((data_type, path_list), )
         self._data_type_flags.append(data_type.value[2])
     
-    def pop(self) -> Tuple[DataType, deque[str]]:
+    def pop(self):
+        # type: () -> Tuple[DataType, deque]
         data_type, path_list = self._smf_data.popleft()
         return data_type, path_list
 
-    def is_empty(self) -> bool:
+    def is_empty(self):
+        # type: () -> bool
         return not self._smf_data
 
-    def get_data_type_flags(self) -> List[int]:
+    def get_data_type_flags(self):
+        # type: () -> List[int]
         return self._data_type_flags

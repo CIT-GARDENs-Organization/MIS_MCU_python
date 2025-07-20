@@ -1,73 +1,113 @@
-from SmfQueue import SmfQueue
-import MT25QL01GBBB_20231023 as MT25QL01GBBB
+# -*- coding: utf-8 -*-
 
+from SmfQueue import SmfQueue
+from MT25QL01GBBB_20231023 import flash
 from syslog import syslog
 import math
 from re import search
 
+def debug_msg(msg):
+    # type: (str) -> None
+    """Print message to console and syslog"""
+    print(msg)
+    syslog(msg)
+
 
 class DataCopy:
     def __init__(self):
-        self._smf_data: SmfQueue = SmfQueue()
-        self.flash = MT25QL01GBBB.flash()
+        self._smf_data = SmfQueue()  # type: SmfQueue
+        self.flash = flash()
     
-    def copy_data(self) -> None:
-        print(f"Start copy to SMF\r\n")
+    def copy_data(self):
+        # type: () -> None
+        debug_msg("Start copy to SMF")
+        data_type = None
+        path_list = None
+        size_erea_address = None
+        body_erea_address = None
+        photo_index = 0
+        path = ""
+        file_size = 0 
+        img_data_all = 0
+        img_sizeof_thisloop = 0
+        PACKET_HEADER_SIZE = 3
+        PACKET_IMGDATA_SIZE = 64 - PACKET_HEADER_SIZE
+        wrote_size_erea_address = 0
+        img_header = 0
+        pckt_headernum = 0
+        total_size = 0
+        erase_subsector_size = 0
+        adrs2writedata = 0
+        next_image_address = 0
+        i = 0
+        erase_address = 0
+        pckt_num = 0
+        total_pckt_num = 0
+        image_size = 0
+        img_write_size = 0
+        total_sector_num = 0
+        start_idx = 0
+        imgdata_bytes = b''
+        match = None
+        parts = []
+        img_pckt_header = []
+        header_start = 0
+        data_start = 0
+        byte_val = 0
+        filename = ""
 
         while not self._smf_data.is_empty():
             data_type, path_list = self._smf_data.pop()
-            print(f"Data type: {data_type.name}")
+            debug_msg("Data type: {0}".format(data_type.name))
             size_erea_address, body_erea_address, _ = data_type.value
 
-            # erese size_erea addres
             self.flash.SUBSECTOR_4KB_ERASE_OF(size_erea_address)
             
             for photo_index, path in enumerate(path_list):
-                # open file and get data size
                 try:
-                    with open(path, 'rb') as image:
-                        f = image.read()
-                        img_byte_array = bytearray(f)
-                        img_data_all = math.ceil(len(img_byte_array) / 64) * 3 
-                        img_sizeof_thisloop = len(img_byte_array) + img_data_all
-                except FileNotFoundError as e:
-                    print(f"File not found: {path}")
-                    print("skip this loop")
+                    import os
+                    file_size = os.path.getsize(path)
+                    img_data_all = math.ceil(file_size / 64) * 3 
+                    img_sizeof_thisloop = file_size + img_data_all
+                except (FileNotFoundError, OSError) as e:
+                    debug_msg("File not found or access error: {0}".format(path))
+                    debug_msg("skip this loop")
                     continue
 
 
 
-                print(f"Start {path} file handle({img_sizeof_thisloop}[bytes])")
-                syslog(f"Start {path} file handle({img_sizeof_thisloop}[bytes])")
+                debug_msg("Start {0} file handle({1}[bytes])".format(path, img_sizeof_thisloop))
 
                 #SMF画像ヘッダエリアにphoto_index枚目の画像ヘッダを書き込む     
                 PACKET_HEADER_SIZE = 3
                 PACKET_IMGDATA_SIZE = 64 - PACKET_HEADER_SIZE
                 wrote_size_erea_address = 4 * photo_index
-                print(f"Write data size area")
-                print(f"\t-> address: {size_erea_address + wrote_size_erea_address:#08x}")
+                debug_msg("Write data size area")
+                debug_msg("\t-> address: {0:#08x}".format(size_erea_address + wrote_size_erea_address))
+                debug_msg("address: {0:#08X}".format(size_erea_address + wrote_size_erea_address))
                 #ここでは、写真のデータ量を書き込んでいく。
                 #つまりデータ量の10進数を16進数に直してそれを1バイトづつ切り分けてそれをビッグエンディアンの順番で書き込んでいく
-                print(f"\t-> data:", end='')
+                debug_msg("\t-> data:")
                 img_header = (img_sizeof_thisloop  >> 24 ) & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 0 + wrote_size_erea_address, img_header)   #画像サイズの上32~24bitをFlashに書き込み
-                print(" {:#X}".format(img_header), end='')
+                debug_msg(" {0:#X}".format(img_header))
 
                 img_header = (img_sizeof_thisloop  >> 16 ) & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 1 + wrote_size_erea_address, img_header)   #画像サイズの上24~16bitをFlashに書き込み
-                print(" {:#X}".format(img_header),end='')
+                debug_msg(" {0:#X}".format(img_header))
 
                 img_header = (img_sizeof_thisloop  >> 8 )  & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 2 + wrote_size_erea_address, img_header)   #画像サイズの上16~8bitをFlashに書き込み
-                print(" {:#X}".format(img_header),end='')
+                debug_msg(" {0:#X}".format(img_header))
+
 
                 img_header = img_sizeof_thisloop & 0xff
                 self.flash.WRITE_DATA_BYTE_SMF(size_erea_address + 3 + wrote_size_erea_address, img_header)   #画像サイズの上8bitをFlashに書き込み
-                print(" {:#X}".format(img_header))
+                debug_msg(" {0:#X}".format(img_header))
 
 
 
-                print(f"Write data body area")
+                debug_msg("Write data body area")
                 pckt_headernum = -(- img_sizeof_thisloop // PACKET_IMGDATA_SIZE )   #読み出した画像がいくつのpcktに分割できるか計算(切上げ)
                 #消去するFlashのセクタ数を切上げ計算。
                 #消去セクタ数合計値 += {(画像本体) + (各画像パケットヘッダの合計)} // 4KBサブセクタのサイズ(4096byte)
@@ -95,28 +135,19 @@ class DataCopy:
                 # print(f"画像{photo_index}の書き込み開始アドレス: 0x{adrs2writedata:08X}")  # デバッグ用
 
                 #SMFに書き込む画像をオープンし画像サイズを計算、list化する
-                try:
-                    with open(path, 'rb') as image:
-                        f = image.read()                                                             #画像を読み込む
-                        img_byte_array = bytearray(f)                                                #読み込んだ画像をバイト列にする(bytearray型)
-                        img_sizeof_thisloop = len(img_byte_array)                                    #読み込んだバイト列の要素の数＝画像サイズ
-                        PhotoList = list(img_byte_array)                                                 #img_byte_array:バイト列にした読み込んだ画像(bytearray型)
-                except FileNotFoundError as e:
-                    print(f"File not found: {path}")
-                    print("skip this loop")
-                    continue
+                # メモリ効率改善：ファイルサイズは既に取得済み、不要なリスト変換を削除
+                img_sizeof_thisloop = file_size  # 実際のファイルサイズを使用
 
                 #画像パケットヘッダ初期値の設定
                 pckt_num   = 0                                                                      #何番目の画像パケットなのか識別
                 total_pckt_num = -(- img_sizeof_thisloop // PACKET_IMGDATA_SIZE)                    #読み出した画像がいくつのpcktに分割できるか計算(切上げ)
 
-
                 #read_img_cntr番目の画像データをパケット化し、画像ヘッダと共に次々にSMFへ書き込んでいく
-                print(f"\t-> address: {adrs2writedata:#08X}")
-                syslog(f"address: {adrs2writedata:#08X}")
+                debug_msg("\t-> address: {0:#08X}".format(adrs2writedata))
+                debug_msg("address: {0:#08X}".format(adrs2writedata))
 
                 # この画像のサイズや必要パケット数から次のアドレスを計算する準備
-                image_size = len(PhotoList)
+                image_size = img_sizeof_thisloop
                 total_pckt_num = (image_size // PACKET_IMGDATA_SIZE)
 
                 # この画像の分で書き込まれるバイト数
@@ -135,53 +166,56 @@ class DataCopy:
                 next_image_address =  total_sector_num * 4096 + adrs2writedata 
 
                 total_pckt_num = int(math.ceil(image_size / PACKET_IMGDATA_SIZE))
-                for pckt_num in range(total_pckt_num):
-                    match = search(r'_([0-9A-Fa-f]{2}_[0-9A-Fa-f]{2}_[0-9A-Fa-f]{2})$', path.split('/')[-1].split('.')[0])
-                    if match:
-                        parts = match.group(1).split('_')
-                    else:
-                        parts = []
-
-                    # make 3-byte header
-                    if len(parts) == 3 and all(len(p) == 2 for p in parts):
-                        try:
-                            img_pckt_header = [
-                                int(parts[0], 16),
-                                int(parts[1], 16),
-                                int(parts[2], 16)
-                            ]
-                        except ValueError:
-                            print("[WARN] Invalid hex value in header parts")
-                            print("       Using default header: `FF FF FF`")
-                            img_pckt_header = [0xFF, 0xFF, 0xFF]
-                    else:
-                        print("[WARN] Invalid header format")
-                        print("       Using default header: `FF FF FF`")
-                        img_pckt_header = [0xFF, 0xFF, 0xFF]
-
-
-                # データ分割
-                    start_idx = pckt_num * PACKET_IMGDATA_SIZE
-                    end_idx = start_idx + PACKET_IMGDATA_SIZE
-                    # 画像データを毎回読み直して最新状態を確保
-                    imgdata_bytearray = PhotoList[start_idx:end_idx]
-
-                # サイズエリア書き込み（3バイト）
-                    header_start = adrs2writedata
-                    for i in range(PACKET_HEADER_SIZE):
-                        self.flash.WRITE_DATA_BYTE_SMF(header_start + i,img_pckt_header[i])
                 
-                # データ書き込み（61バイト）
-                    data_start = header_start + PACKET_HEADER_SIZE
-                    for i, byte in enumerate(imgdata_bytearray):
-                        self.flash.WRITE_DATA_BYTE_SMF(data_start + i, byte)
-                
-                # 次のパケットのアドレスを更新
-                    adrs2writedata = data_start + len(imgdata_bytearray)
-                    #デバック用（64バイトずつ書き込まれているか確認できる）
-                    #print(f"パケット{pckt_num}: ヘッダ=0x{header_start:08X}, データ=0x{data_start:08X}, サイズ={len(imgdata_bytearray)}バイト")  # デバッグ用      #バイト列に変換したread_img_cntr番目の画像をクリア
+                # ファイルを開いてストリーミング処理（メモリ効率改善）
+                try:
+                    with open(path, 'rb') as image_file:
+                        for pckt_num in range(total_pckt_num):
+                            # パス名から正規表現でヘッダ情報を抽出
+                            import os
+                            filename = os.path.splitext(os.path.basename(path))[0]
+                            match = search(r'_([0-9A-Fa-f]{2}_[0-9A-Fa-f]{2}_[0-9A-Fa-f]{2})$', filename)
+                            if match:
+                                parts = match.group(1).split('_')
+                            else:
+                                parts = []
+
+                            # make 3-byte header
+                            if len(parts) == 3 and all(len(p) == 2 for p in parts):
+                                try:
+                                    img_pckt_header = [
+                                        int(parts[0], 16),
+                                        int(parts[1], 16),
+                                        int(parts[2], 16)
+                                    ]
+                                except ValueError:
+                                    debug_msg("[WARN] Invalid hex value in header parts")
+                                    debug_msg("       Using default header: `FF FF FF`")
+                                    img_pckt_header = [0xFF, 0xFF, 0xFF]
+                            else:
+                                debug_msg("[WARN] Invalid header format")
+                                debug_msg("       Using default header: `FF FF FF`")
+                                img_pckt_header = [0xFF, 0xFF, 0xFF]
+
+                            # ストリーミング読み込み
+                            start_idx = pckt_num * PACKET_IMGDATA_SIZE
+                            image_file.seek(start_idx)
+                            imgdata_bytes = image_file.read(PACKET_IMGDATA_SIZE)
+
+                            # ヘッダーとデータを64バイトのパケットをまとめて書き込み
+                            packet_data = img_pckt_header + imgdata_bytes
+                            self.flash.WRITE_DATA_BYTES_SMF(adrs2writedata, packet_data)
+
+                            # 次のパケットのアドレスを更新
+                            adrs2writedata = data_start + len(packet_data)
+                            #デバック用（64バイトずつ書き込まれているか確認できる）
+                            #print(f"パケット{pckt_num}: ヘッダ=0x{header_start:08X}, データ=0x{data_start:08X}, サイズ={len(imgdata_bytes)}バイト")  # デバッグ用
+
+                except (IOError, OSError) as e:
+                    debug_msg("File read error: {0} - {1}".format(path, str(e)))
+                    continue
 
                 print() # end for each path loop
 
 
-        print(f"End copy to SMF")
+        debug_msg("End copy to SMF")

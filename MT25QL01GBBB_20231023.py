@@ -1,27 +1,15 @@
+# -*- coding: utf-8 -*-
+
 # MT25QL01GBBB.py
 # 2021.08 Daigo Tanaka, Misaki Hayashi
 # This code is for testing(Writing and Reading data) Micron's SPI Flash memory, on the BIRDS OBC board.
 # Changelog
 # 2021/11/10 多バイト読み込み用関数[READ_DATA_BYTES_SMF]と多バイト書き込み用関数[WRITE_DATA_BYTES_SMF]
 
-
-
-# -*- coding: utf-8 -*-
-import sys
-import struct
-import os
-import collections
-import random
-import binascii
 import RPi.GPIO as GPIO
 from time import sleep
-import datetime
 import spidev
 import time
-from array import array
-
-from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN
-
 
 
 class flash:
