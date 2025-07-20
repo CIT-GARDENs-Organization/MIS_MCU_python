@@ -25,7 +25,7 @@ def read_data(data_type: DataType, output_path: str, output_file_name: str, outp
             print(f"[END] Terminator found at {hex(current_size_data_ptr)}")
             break
 
-        img_size = int.from_bytes(size_header, 'little')
+        img_size = int.from_bytes(size_header, 'big')
         print(f"\n[data {data_index}] Header at {hex(current_size_data_ptr)}, Size: {img_size} bytes")
 
         

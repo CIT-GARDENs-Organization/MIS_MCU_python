@@ -4,6 +4,7 @@ from SmfQueue import SmfQueue
 from MT25QL01GBBB_20231023 import flash
 from syslog import syslog
 import math
+import os
 from re import search
 
 def debug_msg(msg):
@@ -55,6 +56,8 @@ class DataCopy:
         data_start = 0
         byte_val = 0
         filename = ""
+        file_data = b''
+        end_idx = 0
 
         while not self._smf_data.is_empty():
             data_type, path_list = self._smf_data.pop()
@@ -167,49 +170,57 @@ class DataCopy:
 
                 total_pckt_num = int(math.ceil(image_size / PACKET_IMGDATA_SIZE))
                 
-                # ファイルを開いてストリーミング処理（メモリ効率改善）
+                # ファイル全体を一括読み込み
                 try:
                     with open(path, 'rb') as image_file:
-                        for pckt_num in range(total_pckt_num):
-                            # パス名から正規表現でヘッダ情報を抽出
-                            import os
-                            filename = os.path.splitext(os.path.basename(path))[0]
-                            match = search(r'_([0-9A-Fa-f]{2}_[0-9A-Fa-f]{2}_[0-9A-Fa-f]{2})$', filename)
-                            if match:
-                                parts = match.group(1).split('_')
-                            else:
-                                parts = []
+                        file_data = image_file.read()  # ファイル全体を一括読み込み
+                        
+                        # パス名から正規表現でヘッダ情報を抽出（ループ外で1回だけ実行）
+                        filename = os.path.splitext(os.path.basename(path))[0]
+                        match = search(r'_([0-9A-Fa-f]{2}_[0-9A-Fa-f]{2}_[0-9A-Fa-f]{2})$', filename)
+                        if match:
+                            parts = match.group(1).split('_')
+                        else:
+                            parts = []
 
-                            # make 3-byte header
-                            if len(parts) == 3 and all(len(p) == 2 for p in parts):
-                                try:
-                                    img_pckt_header = [
-                                        int(parts[0], 16),
-                                        int(parts[1], 16),
-                                        int(parts[2], 16)
-                                    ]
-                                except ValueError:
-                                    debug_msg("[WARN] Invalid hex value in header parts")
-                                    debug_msg("       Using default header: `FF FF FF`")
-                                    img_pckt_header = [0xFF, 0xFF, 0xFF]
-                            else:
-                                debug_msg("[WARN] Invalid header format")
+                        # make 3-byte header
+                        if len(parts) == 3 and all(len(p) == 2 for p in parts):
+                            try:
+                                img_pckt_header = [
+                                    int(parts[0], 16),
+                                    int(parts[1], 16),
+                                    int(parts[2], 16)
+                                ]
+                            except ValueError:
+                                debug_msg("[WARN] Invalid hex value in header parts")
                                 debug_msg("       Using default header: `FF FF FF`")
                                 img_pckt_header = [0xFF, 0xFF, 0xFF]
-
-                            # ストリーミング読み込み
+                        else:
+                            debug_msg("[WARN] Invalid header format")
+                            debug_msg("       Using default header: `FF FF FF`")
+                            img_pckt_header = [0xFF, 0xFF, 0xFF]
+                        
+                        # 64バイトパケットごとに処理
+                        for pckt_num in range(total_pckt_num):
+                            # データ分割
                             start_idx = pckt_num * PACKET_IMGDATA_SIZE
-                            image_file.seek(start_idx)
-                            imgdata_bytes = image_file.read(PACKET_IMGDATA_SIZE)
+                            end_idx = start_idx + PACKET_IMGDATA_SIZE
+                            imgdata_bytes = file_data[start_idx:end_idx]
 
-                            # ヘッダーとデータを64バイトのパケットをまとめて書き込み
-                            packet_data = img_pckt_header + imgdata_bytes
-                            self.flash.WRITE_DATA_BYTES_SMF(adrs2writedata, packet_data)
-
-                            # 次のパケットのアドレスを更新
-                            adrs2writedata = data_start + len(packet_data)
+                            # サイズエリア書き込み（3バイト）
+                            header_start = adrs2writedata
+                            for i in range(PACKET_HEADER_SIZE):
+                                self.flash.WRITE_DATA_BYTE_SMF(header_start + i, img_pckt_header[i])
+                        
+                            # データ書き込み（最大61バイト）
+                            data_start = header_start + PACKET_HEADER_SIZE
+                            for i, byte_val in enumerate(imgdata_bytes):
+                                self.flash.WRITE_DATA_BYTE_SMF(data_start + i, byte_val)
+                        
+                            # 次のパケットのアドレスを更新（64バイトずつ）
+                            adrs2writedata = data_start + len(imgdata_bytes)
                             #デバック用（64バイトずつ書き込まれているか確認できる）
-                            #print(f"パケット{pckt_num}: ヘッダ=0x{header_start:08X}, データ=0x{data_start:08X}, サイズ={len(imgdata_bytes)}バイト")  # デバッグ用
+                            #debug_msg("パケット{0}: ヘッダ=0x{1:08X}, データ=0x{2:08X}, サイズ={3}バイト".format(pckt_num, header_start, data_start, len(imgdata_bytes)))
 
                 except (IOError, OSError) as e:
                     debug_msg("File read error: {0} - {1}".format(path, str(e)))
