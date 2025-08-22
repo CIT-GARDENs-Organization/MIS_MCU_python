@@ -13,9 +13,6 @@ def debug_msg(msg):
     print(msg)
     syslog(msg)
 
-def request_to_use_smf():
-     FrameId.IS_SMF_AVAILABLE
-
 
 """
 ======================
