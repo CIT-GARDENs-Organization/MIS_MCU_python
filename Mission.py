@@ -1,7 +1,9 @@
 from SmfQueue import DataType, SmfQueue
+from FrameId import FrameId
 from DataCopy import DataCopy # for development test
 
 from time import sleep
+import time
 from typing import Callable
 from syslog import syslog
 
@@ -11,6 +13,8 @@ def debug_msg(msg):
     print(msg)
     syslog(msg)
 
+def request_to_use_smf():
+     FrameId.IS_SMF_AVAILABLE
 
 
 """
@@ -44,6 +48,18 @@ def debug_msg(msg):
 
 
 class Mission:
+    def request_to_use_smf(self, processer):
+        processer._is_smf_copy_allowed = None
+        processer._status = processer._SMF_COPY_REQ
+        timeout = 60.0
+        interval = 0.1
+        waited = 0.0
+        while processer._is_smf_copy_allowed is None and waited < timeout:
+            time.sleep(interval)
+            waited += interval
+        return processer._is_smf_copy_allowed is True
+
+
     def __init__(self, command_id, parameter):
         # type: (int, bytes) -> None
         self._command_id = command_id  # type: int
