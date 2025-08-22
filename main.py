@@ -218,19 +218,18 @@ class MainProcesser:
             debug_msg("Command ID: {0:#02X}, Parameter: {1}".format(command_id, parameter.hex()))
 
             mission_thread = Thread(target=self._uplink_command_frame_thread, 
-                                    args=(command_id, parameter, ), 
+                                    args=(command_id, parameter, self.__class__), 
                                     daemon=True, 
                                     name="Mission thread{0:#02X}".format(command_id))
             mission_thread.start()
             debug_msg("\t-> Mission thread started")
             debug_msg("Mission thread started")
 
-    def _uplink_command_frame_thread(self, command_id, parameter):
-        # type: (int, bytes) -> None
+    def _uplink_command_frame_thread(self, command_id, parameter, processer):
         print("\r\n________________________________")
         print("_____ Start mission thread _____\r\n")
         debug_msg("Start mission thread")
-        mission = Mission(command_id, parameter)
+        mission = Mission(command_id, parameter, processer)
         try:
             mission.execute_mission() # do anything mission
             debug_msg("Mission executed successfully")

@@ -45,23 +45,23 @@ def debug_msg(msg):
 
 
 class Mission:
-    def request_to_use_smf(self, processer):
-        processer._is_smf_copy_allowed = None
-        processer._status = processer._SMF_COPY_REQ
+    def request_to_use_smf(self):
+        self._processer._is_smf_copy_allowed = None
+        self._processer._status = self._processer._SMF_COPY_REQ
         timeout = 60.0
         interval = 0.1
         waited = 0.0
-        while processer._is_smf_copy_allowed is None and waited < timeout:
+        while self._processer._is_smf_copy_allowed is None and waited < timeout:
             time.sleep(interval)
             waited += interval
-        return processer._is_smf_copy_allowed is True
+        return self._processer._is_smf_copy_allowed is True
 
 
-    def __init__(self, command_id, parameter):
-        # type: (int, bytes) -> None
+    def __init__(self, command_id, parameter, processer):
         self._command_id = command_id  # type: int
         self._parameter = parameter  # type: bytes
         self.smf_data = SmfQueue()  # type: SmfQueue
+        self._processer = processer
         self._mission_list = {  # type: dict
             0x00: self.example_00, 
             0x01: self.example_01,
