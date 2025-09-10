@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import  Tuple
 from select import select
 from collections import deque
+from Status import DeviceStatus
 import sys
 
 
@@ -204,22 +205,14 @@ class SerialCommunication:
 class MainProcesser:
     _LOOP_SLEEP_SEC = 0.2
 
-#   _OFF          = b'\x00'
-#   _BOOTING      = b'\x01'  commentout numbers used by BOSS PIC only
-    _IDLE         = b'\x02'
-    _BUSY         = b'\x03'
-    _SMF_COPY_REQ = b'\x04'
-    _COPYING      = b'\x05'
-    _FINISHED     = b'\x06'
-
     # Definision of `is SMF available` parameter
-    _SMF_COPY_ALLOW = 0x00
-    _SMF_COPY_DENY = 0x01
+    _SMF_COPY_DENY  = 0x00
+    _SMF_COPY_ALLOW = 0x01
 
     def __init__(self):
         self._is_finished: bool = False
         self._com = SerialCommunication()
-        self._status: bytes = self.__class__._IDLE
+        self._status = DeviceStatus()
 
 
     def run(self):
@@ -264,11 +257,11 @@ class MainProcesser:
         print(f"Frame : Uplink command")
 
         self._transmit_ack()
-        if self._status == self.__class__._BUSY:
+        if self._status.status == self._status._BUSY:
             print(f"\t-> MIS MCU is busy. cant execute this mission")
 
-        elif self._status == self.__class__._IDLE:
-            self._status = self.__class__._BUSY
+        elif self._status.status == self._status._IDLE:
+            self._status.status = self._status._BUSY
 
             command_id: int = content[0]
             parameter: bytes = content[1:]
@@ -277,7 +270,7 @@ class MainProcesser:
                                     args=(command_id, parameter, ), 
                                     daemon=True, 
                                     name=f"Mission thread{command_id:#02X}")
-            
+            self._status.is_executing_mission = True
             try:
                 mission_thread.start()
             except Exception as e:
@@ -289,9 +282,10 @@ class MainProcesser:
         mission = Mission(command_id, parameter)
         mission.execute_mission() # do anything mission
         if SmfQueue().is_empty():
-            self._status = self.__class__._FINISHED
+            self._status.status = self._status._FINISHED
         else:
-            self._status = self.__class__._SMF_COPY_REQ
+            self._status.status = self._status._SMF_COPY_REQ
+        self._status.is_executing_mission = False
         print("\r\n______ End mission thread ______")   
         print("________________________________\r\n")
 
@@ -300,9 +294,9 @@ class MainProcesser:
     def _handle_status_check_frame(self, content: bytes) -> None:
         print(f"Frame : STATUS_CHECK")
 
-        print(f"\t-> My status: {int.from_bytes(self._status):#02X}")
+        print(f"\t-> My status: {int.from_bytes(self._status.status):#02X}")
         self._transmit_status()
-        if self._status == self.__class__._FINISHED:
+        if self._status.status == self._status._FINISHED:
             print(f"\t\t-> Finished")
             self._is_finished = True
 
@@ -313,13 +307,14 @@ class MainProcesser:
 
         # Allowed
         if content[0] == self.__class__._SMF_COPY_ALLOW:
-            print("\t\t-> allowd")
-
-            self._status = self.__class__._COPYING
-            data_copy_thread = Thread(target=self._is_smf_available_frame_thread, 
-                                      daemon=True, 
-                                      name="Data copy thread")
-            data_copy_thread.start()
+            print("\t\t-> allowed")
+            self._status.is_allowed_to_copy_smf = True
+            if (self._status.is_executing_mission == False):
+                self._status.status = self._status._COPYING
+                data_copy_thread = Thread(target=self._is_smf_available_frame_thread, 
+                                        daemon=True, 
+                                        name="Data copy thread")
+                data_copy_thread.start()
   
         # Denyed
         elif content[0] == self.__class__._SMF_COPY_DENY:
@@ -330,7 +325,7 @@ class MainProcesser:
     def _is_smf_available_frame_thread(self) -> None:
         data_copy = DataCopy()
         data_copy.copy_data()
-        self._status = self.__class__._FINISHED
+        self._status.status = self._status._FINISHED
 
 
     def _transmit_ack(self):
@@ -340,8 +335,8 @@ class MainProcesser:
     
 
     def _transmit_status(self):
-        if self._status != self.__class__._FINISHED:
-            content = self._status + b'\x00\x00\x00'
+        if self._status.status != self._status._FINISHED:
+            content = self._status.status + b'\x00\x00\x00'
             command = Command(FrameId.MIS_MCU_STATUS, content)
             data = DataHandler.make_transmit_signal(command)
         else: # finished
@@ -349,7 +344,7 @@ class MainProcesser:
             if len(flags) > 3:
                 print(f"Data type flags is too long, data is copied to SMF but not to SCF")
             padded_flags = (flags[:3] + [0x00] * (3 - len(flags)))
-            content = self._status + bytes(padded_flags)
+            content = self._status.status + bytes(padded_flags)
             command = Command(FrameId.MIS_MCU_STATUS, content)
             data = DataHandler.make_transmit_signal(command)      
 

@@ -1,6 +1,6 @@
 from SmfQueue import DataType, SmfQueue
 from DataCopy import DataCopy # for development test
-
+from Status import DeviceStatus
 from time import sleep
 from typing import Callable
 
@@ -41,9 +41,11 @@ class Mission:
         self._command_id: int = command_id
         self._parameter: bytes = parameter
         self.smf_data: SmfQueue = SmfQueue()
+        self.status = DeviceStatus()
         self._mission_list: dict[int, Callable] = {
             0x00: self.example_00, 
             0x01: self.example_01,
+            0x02: self.example_02,
         }
     
 
@@ -101,6 +103,30 @@ class Mission:
 
         print("End CAM mission")
 
+    # sample code. It waits for the time of the 0th byte of the parameter.
+    def example_02(self):
+        print("Start example mission", flush=True)
+        print(f"parameter: {int.from_bytes(self._parameter, 'big'):#016X}")
+
+        print(f"request to copy data to SMF")
+
+
+        self.status.request_smf()
+        print("waiting for allow...")
+        while not self.status.is_can_use_smf():
+            sleep(1)
+            print(".", end="", flush=True)
+
+        print("\nSMF Access start", flush=True)
+        self.status.start_use_smf()
+        for _ in range(25):
+            print(".", end="", flush=True)
+            sleep(1)
+        
+        print("\nSMF Access end", flush=True)
+        self.status.end_use_smf()
+
+        print("End example mission", flush=True)
 
 
 if __name__ == "__main__":
