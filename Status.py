@@ -26,7 +26,7 @@ class DeviceStatus():
     def request_smf(self):
         self.status = self.__class__._SMF_COPY_REQ
     
-    def is_can_use_smf(self):
+    def can_use_smf(self):
         return self.is_allowed_to_copy_smf
 
     def start_use_smf(self):

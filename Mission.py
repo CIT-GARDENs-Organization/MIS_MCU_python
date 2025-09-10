@@ -108,12 +108,12 @@ class Mission:
         print("Start example mission", flush=True)
         print(f"parameter: {int.from_bytes(self._parameter, 'big'):#016X}")
 
-        print(f"request to copy data to SMF")
+        print(f"request to use SMF")
 
 
         self.status.request_smf()
         print("waiting for allow...")
-        while not self.status.is_can_use_smf():
+        while not self.status.can_use_smf():
             sleep(1)
             print(".", end="", flush=True)
 
