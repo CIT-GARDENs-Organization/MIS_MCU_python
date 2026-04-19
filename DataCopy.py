@@ -1,17 +1,38 @@
 # -*- coding: utf-8 -*-
 
 from SmfQueue import SmfQueue
-from MT25QL01GBBB_20231023 import flash
-from syslog import syslog
+from config import USE_WINDOWS
+if not USE_WINDOWS:
+    from syslog import syslog
 import math
 import os
 from re import search
 
-def debug_msg(msg):
-    # type: (str) -> None
-    """Print message to console and syslog"""
-    print(msg)
-    syslog(msg)
+if USE_WINDOWS:
+    class flash:
+        SUBSECTOR_SIZE_OF_4KB = 4096
+
+        def SUBSECTOR_4KB_ERASE_OF(self, address):
+            # type: (int) -> None
+            print("[MockFlash] SUBSECTOR_4KB_ERASE_OF: address={0:#010x}".format(address))
+
+        def WRITE_DATA_BYTE_SMF(self, address, write_data):
+            # type: (int, int) -> None
+            print("[MockFlash] WRITE_DATA_BYTE_SMF: address={0:#010x}, data={1:#04x}".format(address, write_data))
+else:
+    from MT25QL01GBBB_20231023 import flash
+
+if not USE_WINDOWS:
+    def debug_msg(msg):
+        # type: (str) -> None
+        """Print message to console and syslog"""
+        print(msg)
+        syslog(msg)
+else:
+    def debug_msg(msg):
+        # type: (str) -> None
+        """Print message to console and syslog"""
+        print(msg)
 
 
 class DataCopy:

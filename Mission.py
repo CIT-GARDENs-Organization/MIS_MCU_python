@@ -3,14 +3,21 @@ from DataCopy import DataCopy # for development test
 
 from time import sleep
 from typing import Callable
-from syslog import syslog
+from config import USE_WINDOWS
+if not USE_WINDOWS:
+    from syslog import syslog
 
-def debug_msg(msg):
-    # type: (str) -> None
-    """Print message to console and syslog"""
-    print(msg)
-    syslog(msg)
-
+if not USE_WINDOWS:
+    def debug_msg(msg):
+        # type: (str) -> None
+        """Print message to console and syslog"""
+        print(msg)
+        syslog(msg)
+else:
+    def debug_msg(msg):
+        # type: (str) -> None
+        """Print message to console"""
+        print(msg)
 
 
 """

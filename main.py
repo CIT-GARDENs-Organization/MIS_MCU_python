@@ -1,6 +1,7 @@
 from Mission import Mission
 from DataCopy import DataCopy
 from SmfQueue import SmfQueue
+from config import USE_WINDOWS
 
 from time import sleep
 from re import fullmatch
@@ -11,20 +12,13 @@ from threading import Thread
 from typing import Tuple, Optional
 from select import select
 from collections import deque
-import sys
 import os
-from syslog import syslog
 
-USE_WINDOWS = False  # type: bool
+if not USE_WINDOWS:
+    from syslog import syslog
+
 SELF_DEVICE_ID = 0x06  # type: int
 SERIAL_PORT = None  # type: Optional[str]
-
-def debug_msg(msg):
-    # type: (str) -> None
-    """Print message to console and syslog"""
-    print(msg)
-    syslog(msg)
-
 
 
 #                          [[[ Data format ]]] (memo)
@@ -37,6 +31,17 @@ def debug_msg(msg):
 #| (Noise) | SFD | Device ID | Frame ID | Content | CRC | (Noise) |
 #|                                      /         \
 #|                                    CMD ID | Parameter
+
+if not USE_WINDOWS:
+    def debug_msg(msg):
+    # type: (str) -> None
+        print(msg)
+        syslog(msg)
+else:
+    def debug_msg(msg):
+        # type: (str) -> None
+        print(msg)
+
 
 class Command:
     def __init__(self, frame_id, content):
